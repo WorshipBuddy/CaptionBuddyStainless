@@ -1,5 +1,70 @@
 import { isValidReference } from './bibleData';
 
+// English number words used by STT engines when transcribing spoken references.
+const WORD_ONES: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4, five: 5,
+  six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15,
+  sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
+};
+
+const WORD_TENS: Record<string, number> = {
+  twenty: 20, thirty: 30, forty: 40, fifty: 50,
+  sixty: 60, seventy: 70, eighty: 80, ninety: 90,
+};
+
+/**
+ * Parse one number from an array of lower-cased words, consuming the fewest words
+ * needed to form the number. Handles 1–199 (sufficient for all Bible chapter/verse numbers).
+ *
+ * Examples:
+ *   ["eleven"]               → { value: 11, wordCount: 1 }
+ *   ["twenty", "one"]        → { value: 21, wordCount: 2 }
+ *   ["one", "hundred"]       → { value: 100, wordCount: 2 }
+ *   ["one", "hundred", "nineteen"] → { value: 119, wordCount: 3 }
+ */
+function parseOneWordNumber(words: string[]): { value: number; wordCount: number } | null {
+  if (words.length === 0) return null;
+  const w0 = words[0];
+
+  // "one hundred [tens] [ones]" — must be checked before the plain "one" branch
+  if (w0 === 'one' && words.length > 1 && words[1] === 'hundred') {
+    let value = 100;
+    let wordCount = 2;
+    if (words.length > 2) {
+      const w2 = words[2];
+      if (WORD_TENS[w2] !== undefined) {
+        value += WORD_TENS[w2];
+        wordCount = 3;
+        if (words.length > 3 && WORD_ONES[words[3]] !== undefined) {
+          value += WORD_ONES[words[3]];
+          wordCount = 4;
+        }
+      } else if (WORD_ONES[w2] !== undefined) {
+        value += WORD_ONES[w2];
+        wordCount = 3;
+      }
+    }
+    return { value, wordCount };
+  }
+
+  // ones and teens (1–19)
+  if (WORD_ONES[w0] !== undefined) {
+    return { value: WORD_ONES[w0], wordCount: 1 };
+  }
+
+  // tens (20–90), greedily combined with a following ones word
+  if (WORD_TENS[w0] !== undefined) {
+    const tensVal = WORD_TENS[w0];
+    if (words.length > 1 && WORD_ONES[words[1]] !== undefined) {
+      return { value: tensVal + WORD_ONES[words[1]], wordCount: 2 };
+    }
+    return { value: tensVal, wordCount: 1 };
+  }
+
+  return null;
+}
+
 const BIBLE_BOOKS = [
   // Old Testament
   'Genesis', 'Exodus', 'Leviticus', 'Numbers', 'Deuteronomy',
@@ -103,6 +168,31 @@ function parseRefAfterBook(book: string, text: string): { ref: string; length: n
     return { ref, length: leadingSpaces + full.length };
   }
 
+  // Pattern 3b: "X [in] verse(s) Y" — spoken separator between chapter and verse.
+  // Handles: "Numbers 12 in verse 6", "Psalm 139 in verse one", "Exodus 33 verse 14".
+  // Must be checked before Pattern 4 to prevent the digit-only fallback from
+  // misreading the chapter number (e.g. "12" → 1:2 via splitDigitsValidated).
+  const inVerseMatch = trimmed.match(/^(\d+)\s+(?:in\s+)?verses?\s+/i);
+  if (inVerseMatch) {
+    const ch = parseInt(inVerseMatch[1], 10);
+    const afterVerse = trimmed.slice(inVerseMatch[0].length);
+    // Try digit verse
+    const digitVerse = afterVerse.match(/^(\d+)/);
+    if (digitVerse) {
+      const v = parseInt(digitVerse[1], 10);
+      if (isValidReference(book, ch, v)) {
+        return { ref: `${book} ${ch}:${v}`, length: leadingSpaces + inVerseMatch[0].length + digitVerse[0].length };
+      }
+    }
+    // Try word-number verse (e.g. "verse one", "verse twenty one")
+    const verseTokens = afterVerse.replace(/-/g, ' ').split(/\s+/).map((w) => w.toLowerCase());
+    const vParsed = parseOneWordNumber(verseTokens);
+    if (vParsed && isValidReference(book, ch, vParsed.value)) {
+      const verseConsumed = afterVerse.split(/\s+/).slice(0, vParsed.wordCount).join(' ');
+      return { ref: `${book} ${ch}:${vParsed.value}`, length: leadingSpaces + inVerseMatch[0].length + verseConsumed.length };
+    }
+  }
+
   // Pattern 4: "NNN" (digits together, no colon, no space)
   const digitsMatch = trimmed.match(/^(\d{2,})/);
   if (digitsMatch) {
@@ -110,6 +200,23 @@ function parseRefAfterBook(book: string, text: string): { ref: string; length: n
     const validated = splitDigitsValidated(book, digits);
     if (validated) {
       return { ref: validated, length: leadingSpaces + full.length };
+    }
+  }
+
+  // Pattern 5: spoken English number words (e.g. "eleven twenty one", "three sixteen").
+  // Normalise hyphens ("twenty-one") to spaces, then tokenise.
+  const wordTokens = trimmed.replace(/-/g, ' ').split(/\s+/).map((w) => w.toLowerCase());
+  const chParsed = parseOneWordNumber(wordTokens);
+  if (chParsed) {
+    const restTokens = wordTokens.slice(chParsed.wordCount);
+    const vParsed = parseOneWordNumber(restTokens);
+    if (vParsed && isValidReference(book, chParsed.value, vParsed.value)) {
+      const consumedWordCount = chParsed.wordCount + vParsed.wordCount;
+      // Reconstruct the consumed substring from the original (un-lowercased) trimmed text
+      // by joining the same number of whitespace-separated tokens.
+      const originalTokens = trimmed.split(/\s+/);
+      const consumedText = originalTokens.slice(0, consumedWordCount).join(' ');
+      return { ref: `${book} ${chParsed.value}:${vParsed.value}`, length: leadingSpaces + consumedText.length };
     }
   }
 

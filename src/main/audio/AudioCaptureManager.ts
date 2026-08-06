@@ -9,6 +9,33 @@ import { AudioProcessor } from './AudioProcessor';
 
 const execFileAsync = promisify(execFile);
 
+/**
+ * Guess whether a device is a microphone or a line-in source based on its
+ * name and transport type (from system_profiler on macOS).
+ *
+ * Heuristic order:
+ *  1. "Line In" / "Soundboard" / "Mixer" in name → line-in
+ *  2. Known audio-interface brand names → line-in
+ *  3. USB transport but no "mic" in name → likely an interface → line-in
+ *  4. Everything else (Built-in, Bluetooth, plain USB mic) → microphone
+ */
+function guessInputType(name: string, transport: string): 'microphone' | 'line-in' {
+  const n = name.toLowerCase();
+  const t = transport.toLowerCase();
+
+  if (/line[\s-]?in|soundboard|mixer/.test(n)) return 'line-in';
+
+  // Well-known audio interface brands
+  if (/focusrite|scarlett|behringer|yamaha|presonus|audient|motu|apogee|universal\s*audio|zoom\s+h\d|tascam|roland|mackie|steinberg|arturia|ssl\s/.test(n)) {
+    return 'line-in';
+  }
+
+  // USB device that isn't explicitly a mic → probably an interface
+  if (t === 'usb' && !/microphone|mic\b/.test(n)) return 'line-in';
+
+  return 'microphone';
+}
+
 export interface AudioCaptureEvents {
   data: (chunk: Buffer) => void;
   level: (level: number) => void;
@@ -151,26 +178,51 @@ export class AudioCaptureManager extends EventEmitter {
   }
 
   private async listDevicesMacOS(): Promise<AudioDevice[]> {
-    const { stdout } = await execFileAsync('system_profiler', ['SPAudioDataType']);
     const devices: AudioDevice[] = [
-      { deviceId: 'default', label: 'System Default', kind: 'audioinput' },
+      { deviceId: 'default', label: 'System Default', kind: 'audioinput', inputType: 'microphone' },
     ];
 
-    // Parse device blocks - each starts with a name followed by indented properties
-    const blocks = stdout.split(/\n(?=\s{8}\S)/);
-    for (const block of blocks) {
-      const nameMatch = block.match(/^\s{8}(.+?):\s*$/m);
-      if (!nameMatch) continue;
+    try {
+      // -json gives structured output; much more reliable than text-parsing indentation
+      const { stdout } = await execFileAsync('system_profiler', ['SPAudioDataType', '-json']);
+      const data = JSON.parse(stdout) as { SPAudioDataType?: Array<Record<string, string>> };
+      const items = data?.SPAudioDataType ?? [];
 
-      const name = nameMatch[1].trim();
-      const hasInput = /Input Channels:\s*\d+/i.test(block);
-      if (!hasInput) continue;
+      for (const item of items) {
+        const inputChannels = parseInt(item['coreaudio_device_input'] ?? '0', 10);
+        if (inputChannels === 0) continue;
 
-      devices.push({
-        deviceId: name,
-        label: name,
-        kind: 'audioinput',
-      });
+        const name = (item['_name'] ?? '').trim();
+        if (!name) continue;
+
+        const transport = item['coreaudio_device_transport'] ?? '';
+        devices.push({
+          deviceId: name,
+          label: name,
+          kind: 'audioinput',
+          inputType: guessInputType(name, transport),
+        });
+      }
+    } catch {
+      // Fallback: text parsing for older macOS versions that don't support -json
+      try {
+        const { stdout } = await execFileAsync('system_profiler', ['SPAudioDataType']);
+        const blocks = stdout.split(/\n(?=\s{8}\S)/);
+        for (const block of blocks) {
+          const nameMatch = block.match(/^\s{8}(.+?):\s*$/m);
+          if (!nameMatch) continue;
+          const name = nameMatch[1].trim();
+          if (!/Input Channels:\s*[1-9]/i.test(block)) continue;
+          devices.push({
+            deviceId: name,
+            label: name,
+            kind: 'audioinput',
+            inputType: guessInputType(name, ''),
+          });
+        }
+      } catch {
+        // No system_profiler available
+      }
     }
 
     return devices;

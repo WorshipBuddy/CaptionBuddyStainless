@@ -57,6 +57,8 @@ export interface AudioDevice {
   deviceId: string;
   label: string;
   kind: 'audioinput';
+  /** Best-guess input type inferred from device name and transport. */
+  inputType?: 'microphone' | 'line-in';
 }
 
 export interface NetworkStatus {

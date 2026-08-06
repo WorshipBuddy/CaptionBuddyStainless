@@ -61,10 +61,11 @@ export function DisplayApp() {
     };
   }, []);
 
-  // Auto-scroll to bottom when lines change
+  // Keep the most recent line in view. Re-runs on new lines AND on settings
+  // changes (e.g. font size) so a mid-session resize doesn't lose scroll position.
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [lines]);
+  }, [lines, displaySettings]);
 
   // Toggle fullscreen on double-click
   const handleDoubleClick = () => {

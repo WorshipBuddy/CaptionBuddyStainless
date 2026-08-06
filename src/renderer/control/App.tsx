@@ -58,7 +58,6 @@ export function ControlApp() {
   const [status, setStatus] = useState<'idle' | 'recording' | 'paused'>('idle');
   const [audioLevel, setAudioLevel] = useState(0);
   const [wpm, setWpm] = useState(150);
-  const [pacingMode, setPacingMode] = useState<'sentence' | 'streaming' | 'instant'>('sentence');
   const [fontFamily, setFontFamily] = useState('Arial, sans-serif');
   const [fontSize, setFontSize] = useState(32);
   const [displayTheme, setDisplayTheme] = useState<'light' | 'dark' | 'high-contrast'>('light');
@@ -76,7 +75,6 @@ export function ControlApp() {
   const [audioTesting, setAudioTesting] = useState(false);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
   const wpmDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const fontSizeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const t = CONTROL_THEMES[controlTheme];
 
@@ -120,7 +118,6 @@ export function ControlApp() {
         }
       }
       if (settings.pacing) {
-        setPacingMode(settings.pacing.mode);
         setWpm(settings.pacing.wpm);
       }
       if (settings.audio) {
@@ -391,28 +388,24 @@ export function ControlApp() {
               value={selectedDevice}
               disabled={status !== 'idle'}
               onChange={(e) => {
-                setSelectedDevice(e.target.value);
-                window.autoscribe.updateSettings({ audio: { deviceId: e.target.value } as any });
+                const deviceId = e.target.value;
+                setSelectedDevice(deviceId);
+                // Auto-apply the inferred input type for the selected device
+                const device = audioDevices.find((d) => d.deviceId === deviceId);
+                const detectedType = device?.inputType ?? 'microphone';
+                setInputType(detectedType);
+                window.autoscribe.updateSettings({ audio: { deviceId, inputType: detectedType } as any });
               }}
             >
               {audioDevices.map((d) => (
                 <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
               ))}
             </select>
-            <label className={`block text-xs ${t.textMuted} mt-2 mb-1`}>Input Type</label>
-            <select
-              className={`w-full border rounded px-2 py-1.5 text-sm ${t.input} disabled:opacity-50 disabled:cursor-not-allowed`}
-              value={inputType}
-              disabled={status !== 'idle'}
-              onChange={(e) => {
-                const type = e.target.value as 'microphone' | 'line-in';
-                setInputType(type);
-                window.autoscribe.updateSettings({ audio: { inputType: type } as any });
-              }}
-            >
-              <option value="microphone">Microphone</option>
-              <option value="line-in">Soundboard / Line-In</option>
-            </select>
+            {selectedDevice !== 'default' && (
+              <p className={`text-xs ${t.textFaint} mt-1`}>
+                Detected as: {inputType === 'line-in' ? 'Soundboard / Line-In' : 'Microphone'}
+              </p>
+            )}
             <label className={`block text-xs ${t.textMuted} mt-2 mb-1`}>Language</label>
             <select
               className={`w-full border rounded px-2 py-1.5 text-sm ${t.input}`}
@@ -473,21 +466,7 @@ export function ControlApp() {
           {/* Pacing */}
           <section>
             <h2 className={`text-xs font-semibold ${t.textFaint} uppercase tracking-wide mb-2`}>Pacing</h2>
-            <label className={`block text-xs ${t.textMuted} mb-1`}>Mode</label>
-            <select
-              className={`w-full border rounded px-2 py-1.5 text-sm ${t.input}`}
-              value={pacingMode}
-              onChange={(e) => {
-                const mode = e.target.value as 'sentence' | 'streaming' | 'instant';
-                setPacingMode(mode);
-                window.autoscribe.updateSettings({ pacing: { mode, wpm, sentenceDelay: 500 } });
-              }}
-            >
-              <option value="sentence">Sentence-by-Sentence</option>
-              <option value="streaming">Word-by-Word</option>
-              <option value="instant">Instant (No Pacing)</option>
-            </select>
-            <label className={`block text-xs ${t.textMuted} mt-2 mb-1`}>
+            <label className={`block text-xs ${t.textMuted} mb-1`}>
               Speed: <span className="font-medium">{wpm} WPM</span>
             </label>
             <input
@@ -500,7 +479,7 @@ export function ControlApp() {
                 setWpm(newWpm);
                 if (wpmDebounceRef.current) clearTimeout(wpmDebounceRef.current);
                 wpmDebounceRef.current = setTimeout(() => {
-                  window.autoscribe.updateSettings({ pacing: { mode: pacingMode, wpm: newWpm, sentenceDelay: 500 } });
+                  window.autoscribe.updateSettings({ pacing: { mode: 'sentence', wpm: newWpm, sentenceDelay: 500 } });
                 }, 100);
               }}
               className="w-full"
@@ -530,24 +509,45 @@ export function ControlApp() {
               <option value="Georgia, serif">Georgia</option>
               <option value="OpenDyslexic, sans-serif">OpenDyslexic</option>
             </select>
-            <label className={`block text-xs ${t.textMuted} mt-2 mb-1`}>
-              Size: <span className="font-medium">{fontSize}px</span>
-            </label>
-            <input
-              type="range"
-              min={16}
-              max={72}
-              value={fontSize}
-              onChange={(e) => {
-                const size = Number(e.target.value);
-                setFontSize(size);
-                if (fontSizeDebounceRef.current) clearTimeout(fontSizeDebounceRef.current);
-                fontSizeDebounceRef.current = setTimeout(() => {
+            <label className={`block text-xs ${t.textMuted} mt-2 mb-1`}>Size</label>
+            <div className="flex items-center gap-2">
+              <button
+                aria-label="Decrease font size"
+                className={`w-7 h-7 flex items-center justify-center rounded border ${t.border} ${t.textMuted} hover:opacity-80 text-base font-bold flex-shrink-0 disabled:opacity-30`}
+                disabled={fontSize <= 24}
+                onClick={() => {
+                  const size = Math.max(24, fontSize - 4);
+                  setFontSize(size);
                   sendDisplaySettings({ fontSize: size });
-                }, 100);
-              }}
-              className="w-full"
-            />
+                }}
+              >−</button>
+              <input
+                type="number"
+                min={24}
+                max={200}
+                value={fontSize}
+                onChange={(e) => {
+                  const raw = Number(e.target.value);
+                  if (!isNaN(raw)) {
+                    const size = Math.min(200, Math.max(24, raw));
+                    setFontSize(size);
+                    sendDisplaySettings({ fontSize: size });
+                  }
+                }}
+                className={`w-full text-center border rounded px-2 py-1 text-sm ${t.input}`}
+              />
+              <span className={`text-xs ${t.textFaint} flex-shrink-0`}>px</span>
+              <button
+                aria-label="Increase font size"
+                className={`w-7 h-7 flex items-center justify-center rounded border ${t.border} ${t.textMuted} hover:opacity-80 text-base font-bold flex-shrink-0 disabled:opacity-30`}
+                disabled={fontSize >= 200}
+                onClick={() => {
+                  const size = Math.min(200, fontSize + 4);
+                  setFontSize(size);
+                  sendDisplaySettings({ fontSize: size });
+                }}
+              >+</button>
+            </div>
             <div className="flex gap-1.5 mt-2">
               {([
                 ['light', 'Light', '#000000', '#FFFFFF'],

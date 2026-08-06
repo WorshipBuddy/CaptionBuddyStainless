@@ -61,6 +61,69 @@ describe('parseBibleReferences', () => {
     expect(parts[0]).toEqual({ text: 'Acts 2:38-40', isReference: true });
   });
 
+  // ── "in verse" spoken separator ─────────────────────────────────────────
+
+  test('parses "Numbers 12 in verse 6"', () => {
+    const parts = parseBibleReferences("Let's look at Numbers 12 in verse 6");
+    const ref = parts.find((p) => p.isReference);
+    expect(ref?.text).toBe('Numbers 12:6');
+  });
+
+  test('parses "Psalm 139 in verse one" (word-form verse)', () => {
+    const parts = parseBibleReferences('Psalm 139 in verse one');
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toEqual({ text: 'Psalm 139:1', isReference: true });
+  });
+
+  test('parses "Exodus 33 in verse 14"', () => {
+    const parts = parseBibleReferences('Exodus 33 in verse 14');
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toEqual({ text: 'Exodus 33:14', isReference: true });
+  });
+
+  test('parses "Romans 8 verse 28" (verse without "in")', () => {
+    const parts = parseBibleReferences('Romans 8 verse 28');
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toEqual({ text: 'Romans 8:28', isReference: true });
+  });
+
+  // ── Spoken word-number format ────────────────────────────────────────────
+
+  test('parses "Matthew eleven twenty one" (word-form double-digit chapter and verse)', () => {
+    const parts = parseBibleReferences('Matthew eleven twenty one');
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toEqual({ text: 'Matthew 11:21', isReference: true });
+  });
+
+  test('parses "John three sixteen" (word-form single-digit chapter, teen verse)', () => {
+    const parts = parseBibleReferences('John three sixteen');
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toEqual({ text: 'John 3:16', isReference: true });
+  });
+
+  test('parses "Matthew twenty two thirty" (both numbers two words)', () => {
+    const parts = parseBibleReferences('Matthew twenty two thirty');
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toEqual({ text: 'Matthew 22:30', isReference: true });
+  });
+
+  test('parses "Psalm one hundred nineteen one" (hundred form chapter)', () => {
+    const parts = parseBibleReferences('Psalm one hundred nineteen one');
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toEqual({ text: 'Psalm 119:1', isReference: true });
+  });
+
+  test('parses word-number reference embedded in prose', () => {
+    const parts = parseBibleReferences('Today we look at Romans eight twenty eight in our study.');
+    const ref = parts.find((p) => p.isReference);
+    expect(ref?.text).toBe('Romans 8:28');
+  });
+
+  test('word-form book name alone is not a reference', () => {
+    const parts = parseBibleReferences('Matthew eleven');
+    expect(parts.every((p) => !p.isReference)).toBe(true);
+  });
+
   // ── No-match cases ──────────────────────────────────────────────────────
 
   test('returns non-reference for plain text', () => {
