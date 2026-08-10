@@ -52,6 +52,119 @@ function FormattedSegment({ text, className }: { text: string; className?: strin
   );
 }
 
+/**
+ * A transcript line the operator can correct in place.
+ *
+ * Click (or focus and press Enter) to edit; Enter commits, Escape reverts.
+ * Committing pushes the correction to the display window and every connected
+ * phone. Editing is deliberately not blocked while recording — fixing a
+ * misheard name mid-sermon is the whole point.
+ */
+function EditableSegment({
+  segment,
+  className,
+  inputClassName,
+  hintClassName,
+  onCommit,
+}: {
+  segment: TranscriptSegment;
+  className?: string;
+  inputClassName: string;
+  hintClassName: string;
+  onCommit: (id: string, text: string) => void;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft, setDraft] = useState(segment.text);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const beginEdit = () => {
+    setDraft(segment.text);
+    setIsEditing(true);
+  };
+
+  const commit = () => {
+    const trimmed = draft.trim();
+    // An empty edit is almost always a slip, and blanking a line on the
+    // projector mid-service is worse than leaving the original text.
+    if (trimmed && trimmed !== segment.text) {
+      onCommit(segment.id, trimmed);
+    }
+    setIsEditing(false);
+  };
+
+  const cancel = () => {
+    setDraft(segment.text);
+    setIsEditing(false);
+  };
+
+  // Focus and size the textarea to its content as soon as it appears.
+  useEffect(() => {
+    if (!isEditing) return;
+    const el = textareaRef.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [isEditing]);
+
+  if (isEditing) {
+    return (
+      <div className="mb-2">
+        <textarea
+          ref={textareaRef}
+          value={draft}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            e.target.style.height = 'auto';
+            e.target.style.height = `${e.target.scrollHeight}px`;
+          }}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              commit();
+            } else if (e.key === 'Escape') {
+              e.preventDefault();
+              cancel();
+            }
+          }}
+          rows={1}
+          className={`w-full resize-none rounded border px-2 py-1 leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-500 ${inputClassName}`}
+        />
+        <p className={`text-xs mt-1 ${hintClassName}`}>
+          Enter to save · Shift+Enter for a new line · Esc to cancel
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      title="Click to edit — the correction appears on the display and on phones"
+      onClick={beginEdit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          beginEdit();
+        }
+      }}
+      className="group relative cursor-text rounded px-2 py-1 -mx-2 hover:bg-blue-500/10 focus:outline-none focus:ring-2 focus:ring-blue-500"
+    >
+      <FormattedSegment text={segment.text} className={className} />
+      {segment.editedAt !== undefined && (
+        <span
+          className={`absolute top-1 right-1 text-[10px] uppercase tracking-wide opacity-0 group-hover:opacity-100 ${hintClassName}`}
+        >
+          edited
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function ControlApp() {
   const [splash, setSplash] = useState(true);
   const [splashFading, setSplashFading] = useState(false);
@@ -146,10 +259,25 @@ export function ControlApp() {
     return unsub;
   }, []);
 
-  // Auto-scroll to bottom when new segments arrive
+  // Auto-scroll to bottom when new segments arrive. Keyed on the newest id
+  // rather than the array itself, so committing an edit to an older line
+  // doesn't yank the operator back down to the bottom of the transcript.
+  const newestSegmentId = segments.length > 0 ? segments[segments.length - 1].id : null;
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [segments]);
+  }, [newestSegmentId]);
+
+  /**
+   * Commit an operator correction. The local list updates immediately so the
+   * control panel never appears to lag; main then fans the change out to the
+   * display window and any connected phones.
+   */
+  const handleSegmentEdit = useCallback((id: string, text: string) => {
+    setSegments((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, text, editedAt: Date.now() } : s))
+    );
+    window.autoscribe.updateSegment(id, text);
+  }, []);
 
   const sendDisplaySettings = (partial: Record<string, unknown>) => {
     window.autoscribe.updateSettings({ display: partial as any });
@@ -639,10 +767,13 @@ export function ControlApp() {
               </p>
             ) : (
               segments.map((seg) => (
-                <FormattedSegment
+                <EditableSegment
                   key={seg.id}
-                  text={seg.text}
-                  className={`mb-2 ${t.text} leading-relaxed`}
+                  segment={seg}
+                  className={`${t.text} leading-relaxed`}
+                  inputClassName={t.input}
+                  hintClassName={t.textFaint}
+                  onCommit={handleSegmentEdit}
                 />
               ))
             )}

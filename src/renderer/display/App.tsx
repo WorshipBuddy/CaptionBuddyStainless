@@ -50,6 +50,16 @@ export function DisplayApp() {
       });
     });
 
+    const unsubUpdate = window.autoscribe.onTranscriptUpdate(({ id, text }) => {
+      setLines((prev) => {
+        const index = prev.findIndex((line) => line.id === id);
+        if (index === -1) return prev;
+        const updated = [...prev];
+        updated[index] = { id, text };
+        return updated;
+      });
+    });
+
     const unsubClear = window.autoscribe.onTranscriptClear(() => {
       setLines([]);
     });
@@ -57,6 +67,7 @@ export function DisplayApp() {
     return () => {
       unsubSettings();
       unsubTranscript();
+      unsubUpdate();
       unsubClear();
     };
   }, []);

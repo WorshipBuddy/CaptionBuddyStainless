@@ -6,10 +6,10 @@ import { networkInterfaces } from 'os';
 import QRCode from 'qrcode';
 import { TranscriptSegment } from '../../shared/types/transcript';
 import { DisplaySettings, DEFAULT_SETTINGS } from '../../shared/types/settings';
-import { PacedSegment, NetworkStatus } from '../../shared/types/ipc';
+import { PacedSegment, NetworkStatus, SegmentUpdate } from '../../shared/types/ipc';
 
 interface WSMessage {
-  type: 'segment' | 'settings' | 'clear' | 'welcome';
+  type: 'segment' | 'update' | 'settings' | 'clear' | 'welcome';
   payload: unknown;
 }
 
@@ -135,6 +135,19 @@ export class NetworkServer extends EventEmitter {
     }
 
     this.broadcast({ type: 'segment', payload: paced });
+  }
+
+  /**
+   * Push an operator correction for a segment viewers have already received.
+   * The replay buffer is corrected too, so a phone joining later gets the
+   * fixed text rather than the original transcription.
+   */
+  broadcastSegmentUpdate(update: SegmentUpdate): void {
+    const index = this.recentSegments.findIndex((s) => s.id === update.id);
+    if (index !== -1) {
+      this.recentSegments[index] = { ...this.recentSegments[index], text: update.text };
+    }
+    this.broadcast({ type: 'update', payload: update });
   }
 
   broadcastSettings(settings: DisplaySettings): void {
@@ -362,10 +375,24 @@ export class NetworkServer extends EventEmitter {
     }
 
     function addSegment(segment) {
-      lines.push({ id: segment.id, text: segment.text });
-      if (lines.length > MAX_LINES) {
-        lines = lines.slice(-MAX_LINES);
+      // Streaming mode re-sends the same id as a segment grows, so upsert
+      // rather than append or the same sentence stacks up line after line.
+      const existing = lines.findIndex(function (l) { return l.id === segment.id; });
+      if (existing !== -1) {
+        lines[existing] = { id: segment.id, text: segment.text };
+      } else {
+        lines.push({ id: segment.id, text: segment.text });
+        if (lines.length > MAX_LINES) {
+          lines = lines.slice(-MAX_LINES);
+        }
       }
+      renderLines();
+    }
+
+    function updateSegment(update) {
+      const index = lines.findIndex(function (l) { return l.id === update.id; });
+      if (index === -1) return;
+      lines[index] = { id: update.id, text: update.text };
       renderLines();
     }
 
@@ -406,6 +433,9 @@ export class NetworkServer extends EventEmitter {
             break;
           case 'segment':
             addSegment(msg.payload.segment);
+            break;
+          case 'update':
+            updateSegment(msg.payload);
             break;
           case 'settings':
             applySettings(msg.payload);

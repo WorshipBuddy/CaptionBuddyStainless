@@ -6,6 +6,8 @@ export const IPC_CHANNELS = {
   TRANSCRIPT_SEGMENT: 'transcript:segment',
   TRANSCRIPT_CLEAR: 'transcript:clear',
   TRANSCRIPT_EXPORT: 'transcript:export',
+  /** Operator correction: control → main, then main → display + network viewers */
+  TRANSCRIPT_UPDATE: 'transcript:update',
 
   // Session
   SESSION_START: 'session:start',
@@ -72,4 +74,10 @@ export interface NetworkStatus {
 export interface PacedSegment {
   segment: TranscriptSegment;
   displayDuration: number;
+}
+
+/** An operator's correction to a segment that is already on screen. */
+export interface SegmentUpdate {
+  id: string;
+  text: string;
 }

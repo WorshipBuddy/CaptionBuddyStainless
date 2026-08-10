@@ -1,7 +1,7 @@
 import { ipcMain, dialog } from 'electron';
 import { writeFile } from 'fs/promises';
 import { v4 as uuid } from 'uuid';
-import { IPC_CHANNELS, SessionStatus, PacedSegment, AppStatusEvent } from '../../shared/types/ipc';
+import { IPC_CHANNELS, SessionStatus, PacedSegment, AppStatusEvent, SegmentUpdate } from '../../shared/types/ipc';
 import { DEFAULT_SETTINGS, AudioSettings, PacingSettings, AppSettings } from '../../shared/types/settings';
 import { TranscriptSegment } from '../../shared/types/transcript';
 import { AudioCaptureManager } from '../audio/AudioCaptureManager';
@@ -121,6 +121,27 @@ export function registerIpcHandlers(): void {
 
   ipcMain.on(IPC_CHANNELS.DISPLAY_CLOSE, () => {
     closeDisplayWindow();
+  });
+
+  // Operator correction to a transcript segment. The buffer is the source of
+  // truth (and therefore what gets exported), so it is updated regardless of
+  // whether the segment has reached the display yet.
+  ipcMain.handle(IPC_CHANNELS.TRANSCRIPT_UPDATE, async (_event, update: SegmentUpdate) => {
+    const text = update.text.trim();
+    transcriptBuffer.update(update.id, text);
+
+    // If the segment is still queued, correcting it in place is enough — it
+    // will be emitted with the new text when its turn comes.
+    const stillQueued = pacingController.updateQueued(update.id, text);
+    if (stillQueued) return;
+
+    const display = getDisplayWindow();
+    if (display && !display.isDestroyed()) {
+      display.webContents.send(IPC_CHANNELS.TRANSCRIPT_UPDATE, { id: update.id, text });
+    }
+    if (networkServer.isRunning) {
+      networkServer.broadcastSegmentUpdate({ id: update.id, text });
+    }
   });
 
   // Settings

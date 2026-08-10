@@ -5,6 +5,8 @@ export interface TranscriptSegment {
   confidence: number;
   isFinal: boolean;
   displayedAt?: number;
+  /** Set when an operator corrected this segment's text from the control panel. */
+  editedAt?: number;
 }
 
 export interface TranscriptSession {

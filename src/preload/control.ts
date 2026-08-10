@@ -24,6 +24,10 @@ const controlAPI = {
   exportTranscript: (): Promise<string> =>
     ipcRenderer.invoke(IPC_CHANNELS.TRANSCRIPT_EXPORT),
 
+  // Transcript editing — pushes the correction to the display and viewers
+  updateSegment: (id: string, text: string): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TRANSCRIPT_UPDATE, { id, text }),
+
   // Audio
   getAudioDevices: (): Promise<AudioDevice[]> =>
     ipcRenderer.invoke(IPC_CHANNELS.AUDIO_DEVICES),

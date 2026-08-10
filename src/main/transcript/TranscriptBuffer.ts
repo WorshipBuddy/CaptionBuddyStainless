@@ -20,6 +20,18 @@ export class TranscriptBuffer {
     }
   }
 
+  /**
+   * Replace the text of an already-buffered segment (operator correction).
+   * Returns the updated segment, or null if it has aged out of the buffer.
+   */
+  update(id: string, text: string): TranscriptSegment | null {
+    const index = this.segments.findIndex((s) => s.id === id);
+    if (index === -1) return null;
+    const updated = { ...this.segments[index], text, editedAt: Date.now() };
+    this.segments[index] = updated;
+    return updated;
+  }
+
   getAll(): TranscriptSegment[] {
     return [...this.segments];
   }

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { IPC_CHANNELS, PacedSegment } from '../shared/types/ipc';
+import { IPC_CHANNELS, PacedSegment, SegmentUpdate } from '../shared/types/ipc';
 import { DisplaySettings, PacingSettings } from '../shared/types/settings';
 
 const displayAPI = {
@@ -8,6 +8,13 @@ const displayAPI = {
     const listener = (_event: Electron.IpcRendererEvent, paced: PacedSegment) => callback(paced);
     ipcRenderer.on(IPC_CHANNELS.TRANSCRIPT_SEGMENT, listener);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.TRANSCRIPT_SEGMENT, listener);
+  },
+
+  // Receive operator corrections to segments already on screen
+  onTranscriptUpdate: (callback: (update: SegmentUpdate) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, update: SegmentUpdate) => callback(update);
+    ipcRenderer.on(IPC_CHANNELS.TRANSCRIPT_UPDATE, listener);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.TRANSCRIPT_UPDATE, listener);
   },
 
   // Receive display settings updates
