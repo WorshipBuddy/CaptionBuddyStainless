@@ -172,4 +172,118 @@ describe('parseBibleReferences', () => {
     expect(parts[0].text).toBe('1 John 3:16');
     expect(parts[0].isReference).toBe(true);
   });
+
+  // ── Word-form numbers with spoken chapter/verse keywords ─────────────────
+  // These are the forms an operator actually hears: the speaker says the
+  // numbers as words AND says "chapter"/"verse" out loud.
+
+  test('parses "Proverbs twenty four verse eleven" (word chapter + verse keyword)', () => {
+    const parts = parseBibleReferences('Proverbs twenty four verse eleven');
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toEqual({ text: 'Proverbs 24:11', isReference: true });
+  });
+
+  test('parses "Proverbs chapter twenty four verse eleven" (both keywords, word numbers)', () => {
+    const parts = parseBibleReferences('Proverbs chapter twenty four verse eleven');
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toEqual({ text: 'Proverbs 24:11', isReference: true });
+  });
+
+  test('parses "John chapter three verse sixteen" (word numbers after "chapter")', () => {
+    const parts = parseBibleReferences('John chapter three verse sixteen');
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toEqual({ text: 'John 3:16', isReference: true });
+  });
+
+  test('parses "Romans chapter eight verse twenty eight"', () => {
+    const parts = parseBibleReferences('Romans chapter eight verse twenty eight');
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toEqual({ text: 'Romans 8:28', isReference: true });
+  });
+
+  test('parses "Psalm one hundred nineteen verse eleven" (hundred form + verse keyword)', () => {
+    const parts = parseBibleReferences('Psalm one hundred nineteen verse eleven');
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toEqual({ text: 'Psalm 119:11', isReference: true });
+  });
+
+  test('parses word-form reference with keyword embedded in prose', () => {
+    const parts = parseBibleReferences('turn with me to Proverbs twenty four verse eleven this morning');
+    const ref = parts.find((p) => p.isReference);
+    expect(ref?.text).toBe('Proverbs 24:11');
+  });
+
+  test('parses word-form range "Proverbs twenty four verses eleven through twelve"', () => {
+    const parts = parseBibleReferences('Proverbs twenty four verses eleven through twelve');
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toEqual({ text: 'Proverbs 24:11-12', isReference: true });
+  });
+
+  // ── Chapters past 21 in Proverbs ─────────────────────────────────────────
+  // Regression guard: the verse-count table was truncated at Proverbs 21, which
+  // made isValidReference() reject chapters 22-31. "Proverbs 24 verse 11" then
+  // fell through to the run-together digit splitter and rendered as "Proverbs 2:4".
+
+  test('parses "Proverbs 24 verse 11" without mangling the chapter', () => {
+    const parts = parseBibleReferences('Proverbs 24 verse 11');
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toEqual({ text: 'Proverbs 24:11', isReference: true });
+  });
+
+  test('parses "Proverbs 31:10" (chapter beyond the old truncated data)', () => {
+    const parts = parseBibleReferences('Proverbs 31:10');
+    expect(parts[0]).toEqual({ text: 'Proverbs 31:10', isReference: true });
+  });
+
+  test('parses bare word form "Proverbs twenty four eleven"', () => {
+    const parts = parseBibleReferences('Proverbs twenty four eleven');
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toEqual({ text: 'Proverbs 24:11', isReference: true });
+  });
+
+  // ── Formatting and range variants ────────────────────────────────────────
+
+  test('parses hyphen range with no colon "Acts 2 38-40"', () => {
+    const parts = parseBibleReferences('Acts 2 38-40');
+    expect(parts[0]).toEqual({ text: 'Acts 2:38-40', isReference: true });
+  });
+
+  test('parses "Acts chapter 2 verses 38 to 40" ("to" instead of "through")', () => {
+    const parts = parseBibleReferences('Acts chapter 2 verses 38 to 40');
+    expect(parts[0]).toEqual({ text: 'Acts 2:38-40', isReference: true });
+  });
+
+  test('trailing punctuation does not break word-form parsing', () => {
+    const parts = parseBibleReferences('John three sixteen.');
+    const ref = parts.find((p) => p.isReference);
+    expect(ref?.text).toBe('John 3:16');
+  });
+
+  test('extra whitespace between numbers is tolerated', () => {
+    const parts = parseBibleReferences('Genesis 1  5');
+    const ref = parts.find((p) => p.isReference);
+    expect(ref?.text).toBe('Genesis 1:5');
+  });
+
+  // ── Negative cases for the word-form path ────────────────────────────────
+
+  test('"Luke twenty two" (chapter only, no verse) is not a reference', () => {
+    const parts = parseBibleReferences('Luke twenty two');
+    expect(parts.every((p) => !p.isReference)).toBe(true);
+  });
+
+  test('"Acts chapter two" (no verse) is not a reference', () => {
+    const parts = parseBibleReferences('Acts chapter two');
+    expect(parts.every((p) => !p.isReference)).toBe(true);
+  });
+
+  test('"Numbers one and two" (conjunction, not a verse) is not a reference', () => {
+    const parts = parseBibleReferences('Numbers one and two');
+    expect(parts.every((p) => !p.isReference)).toBe(true);
+  });
+
+  test('number words with no book name are not a reference', () => {
+    const parts = parseBibleReferences('I counted twenty four people');
+    expect(parts.every((p) => !p.isReference)).toBe(true);
+  });
 });

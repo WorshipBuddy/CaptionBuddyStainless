@@ -132,6 +132,61 @@ function findBookAt(text: string, start: number): string | null {
   return null;
 }
 
+interface Token {
+  /** Lower-cased, with trailing sentence punctuation stripped, for matching. */
+  word: string;
+  /** Offset of the token's last character + 1, in the string it was tokenised from. */
+  end: number;
+}
+
+/**
+ * Split text into whitespace-separated tokens, recording where each one ends so
+ * the caller can report exactly how many characters a match consumed.
+ *
+ * Hyphens between letters ("twenty-one") are treated as word separators. The
+ * substitution is 1:1 on characters, so offsets still refer to the original text.
+ * Hyphens between digits are left alone — they mean a range ("38-40").
+ */
+function tokenize(text: string): Token[] {
+  const normalized = text.replace(/(?<=[A-Za-z])-(?=[A-Za-z])/g, ' ');
+  const tokens: Token[] = [];
+  const re = /\S+/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(normalized)) !== null) {
+    tokens.push({
+      word: m[0].toLowerCase().replace(/[.,;:!?]+$/, ''),
+      end: m.index + m[0].length,
+    });
+  }
+  return tokens;
+}
+
+/**
+ * Read one chapter or verse number starting at `i`, accepting either digits
+ * ("24") or spoken English number words ("twenty four").
+ */
+function parseNumberAt(tokens: Token[], i: number): { value: number; consumed: number } | null {
+  if (i >= tokens.length) return null;
+
+  if (/^\d+$/.test(tokens[i].word)) {
+    return { value: parseInt(tokens[i].word, 10), consumed: 1 };
+  }
+
+  const words = tokens.slice(i).map((t) => t.word);
+  const parsed = parseOneWordNumber(words);
+  return parsed ? { value: parsed.value, consumed: parsed.wordCount } : null;
+}
+
+/** Matches the spoken separators that can sit between a chapter and its verse. */
+function skipVerseKeyword(tokens: Token[], i: number): { next: number; explicit: boolean } {
+  let j = i;
+  if (j < tokens.length && tokens[j].word === 'in') j++;
+  if (j < tokens.length && /^verses?$/.test(tokens[j].word)) {
+    return { next: j + 1, explicit: true };
+  }
+  return { next: i, explicit: false };
+}
+
 /**
  * Parse the reference portion after a book name.
  * Returns { ref: normalized string, length: chars consumed } or null.
@@ -141,82 +196,83 @@ function parseRefAfterBook(book: string, text: string): { ref: string; length: n
   const leadingSpaces = text.length - trimmed.length;
   if (leadingSpaces === 0) return null; // no space after book name
 
-  // Pattern 1: "chapter X verse(s) Y (through/to Z)"
-  const chapterMatch = trimmed.match(
-    /^chapter\s+(\d+)\s+verses?\s+(\d+)(?:\s+(?:through|to|-)\s+(\d+))?/i
-  );
-  if (chapterMatch) {
-    const [full, ch, v, vEnd] = chapterMatch;
-    const ref = vEnd ? `${book} ${ch}:${v}-${vEnd}` : `${book} ${ch}:${v}`;
-    return { ref, length: leadingSpaces + full.length };
-  }
-
-  // Pattern 2: "X:Y" or "X:Y-Z" or "X:Y-Z:W" (standard colon format)
-  const colonMatch = trimmed.match(
-    /^(\d+):(\d+)(?:\s*-\s*(\d+)(?::(\d+))?)?/
-  );
+  // Colon format is unambiguous, so it wins outright:
+  // "X:Y", "X:Y-Z", "X:Y-Z:W"
+  const colonMatch = trimmed.match(/^(\d+):(\d+)(?:\s*-\s*(\d+)(?::(\d+))?)?/);
   if (colonMatch) {
     const [full] = colonMatch;
     return { ref: `${book} ${full}`, length: leadingSpaces + full.length };
   }
 
-  // Pattern 3: "X Y" or "X Y-Z" (two space-separated numbers)
-  const twoNumMatch = trimmed.match(/^(\d{1,3})\s+(\d{1,3})(?:\s*-\s*(\d+))?/);
-  if (twoNumMatch) {
-    const [full, ch, v, vEnd] = twoNumMatch;
-    const ref = vEnd ? `${book} ${ch}:${v}-${vEnd}` : `${book} ${ch}:${v}`;
-    return { ref, length: leadingSpaces + full.length };
-  }
+  // Spoken forms, digits and number words handled alike:
+  //   [chapter] <ch> [[in] verse[s]] <v> [(through|to|-) <vEnd>]
+  // Covers "3 16", "chapter 3 verse 16", "twenty four verse eleven",
+  // "one hundred nineteen verse one", "chapter 2 verses 38 through 40".
+  const tokens = tokenize(trimmed);
+  if (tokens.length >= 2) {
+    let i = 0;
+    let explicit = false;
 
-  // Pattern 3b: "X [in] verse(s) Y" — spoken separator between chapter and verse.
-  // Handles: "Numbers 12 in verse 6", "Psalm 139 in verse one", "Exodus 33 verse 14".
-  // Must be checked before Pattern 4 to prevent the digit-only fallback from
-  // misreading the chapter number (e.g. "12" → 1:2 via splitDigitsValidated).
-  const inVerseMatch = trimmed.match(/^(\d+)\s+(?:in\s+)?verses?\s+/i);
-  if (inVerseMatch) {
-    const ch = parseInt(inVerseMatch[1], 10);
-    const afterVerse = trimmed.slice(inVerseMatch[0].length);
-    // Try digit verse
-    const digitVerse = afterVerse.match(/^(\d+)/);
-    if (digitVerse) {
-      const v = parseInt(digitVerse[1], 10);
-      if (isValidReference(book, ch, v)) {
-        return { ref: `${book} ${ch}:${v}`, length: leadingSpaces + inVerseMatch[0].length + digitVerse[0].length };
+    if (tokens[i].word === 'chapter') {
+      i++;
+      explicit = true;
+    }
+
+    const chapter = parseNumberAt(tokens, i);
+    if (chapter) {
+      i += chapter.consumed;
+
+      const skipped = skipVerseKeyword(tokens, i);
+      i = skipped.next;
+      explicit = explicit || skipped.explicit;
+
+      // The verse may carry its range in the same token ("38-40"), since a
+      // hyphen between digits is not treated as a word separator.
+      let verse = parseNumberAt(tokens, i);
+      let attachedRangeEnd: number | null = null;
+      if (!verse && i < tokens.length) {
+        const joined = tokens[i].word.match(/^(\d+)-(\d+)$/);
+        if (joined) {
+          verse = { value: parseInt(joined[1], 10), consumed: 1 };
+          attachedRangeEnd = parseInt(joined[2], 10);
+        }
+      }
+
+      if (verse) {
+        i += verse.consumed;
+        let end = tokens[i - 1].end;
+        let ref = `${book} ${chapter.value}:${verse.value}`;
+
+        if (attachedRangeEnd !== null && attachedRangeEnd > verse.value) {
+          ref = `${book} ${chapter.value}:${verse.value}-${attachedRangeEnd}`;
+        } else if (i < tokens.length && /^(through|to|-)$/.test(tokens[i].word)) {
+          // Range written as separate tokens: "through 40", "to 40", "- 40"
+          const verseEnd = parseNumberAt(tokens, i + 1);
+          if (verseEnd && verseEnd.value > verse.value) {
+            i += 1 + verseEnd.consumed;
+            end = tokens[i - 1].end;
+            ref = `${book} ${chapter.value}:${verse.value}-${verseEnd.value}`;
+          }
+        }
+
+        // An explicit "chapter"/"verse" keyword means the speaker told us the
+        // structure, so take it at face value. A bare "Genesis 1 5" is only a
+        // reference if the numbers actually exist — otherwise it is ordinary
+        // speech that happens to follow a book name.
+        if (explicit || isValidReference(book, chapter.value, verse.value)) {
+          return { ref, length: leadingSpaces + end };
+        }
       }
     }
-    // Try word-number verse (e.g. "verse one", "verse twenty one")
-    const verseTokens = afterVerse.replace(/-/g, ' ').split(/\s+/).map((w) => w.toLowerCase());
-    const vParsed = parseOneWordNumber(verseTokens);
-    if (vParsed && isValidReference(book, ch, vParsed.value)) {
-      const verseConsumed = afterVerse.split(/\s+/).slice(0, vParsed.wordCount).join(' ');
-      return { ref: `${book} ${ch}:${vParsed.value}`, length: leadingSpaces + inVerseMatch[0].length + verseConsumed.length };
-    }
   }
 
-  // Pattern 4: "NNN" (digits together, no colon, no space)
+  // Run-together digits with no separator at all: "316" → 3:16.
   const digitsMatch = trimmed.match(/^(\d{2,})/);
   if (digitsMatch) {
     const [full, digits] = digitsMatch;
     const validated = splitDigitsValidated(book, digits);
     if (validated) {
       return { ref: validated, length: leadingSpaces + full.length };
-    }
-  }
-
-  // Pattern 5: spoken English number words (e.g. "eleven twenty one", "three sixteen").
-  // Normalise hyphens ("twenty-one") to spaces, then tokenise.
-  const wordTokens = trimmed.replace(/-/g, ' ').split(/\s+/).map((w) => w.toLowerCase());
-  const chParsed = parseOneWordNumber(wordTokens);
-  if (chParsed) {
-    const restTokens = wordTokens.slice(chParsed.wordCount);
-    const vParsed = parseOneWordNumber(restTokens);
-    if (vParsed && isValidReference(book, chParsed.value, vParsed.value)) {
-      const consumedWordCount = chParsed.wordCount + vParsed.wordCount;
-      // Reconstruct the consumed substring from the original (un-lowercased) trimmed text
-      // by joining the same number of whitespace-separated tokens.
-      const originalTokens = trimmed.split(/\s+/);
-      const consumedText = originalTokens.slice(0, consumedWordCount).join(' ');
-      return { ref: `${book} ${chParsed.value}:${vParsed.value}`, length: leadingSpaces + consumedText.length };
     }
   }
 
