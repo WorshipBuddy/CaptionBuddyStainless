@@ -6,10 +6,13 @@ AutoScribe is an offline, AI-powered transcription tool designed for churches to
 
 - **Real-time speech-to-text** using Whisper (via Transformers.js) running locally on CPU
 - **Multilingual support** with English and Spanish transcription, plus Spanish-to-English translation
+- **English-to-Spanish translation** on-device, shown split-screen, on a screen of its own, or on a second projector
+- **Editable transcript** — correct a misheard word in the control panel and it updates instantly on the projector and on phones
 - **Readable pacing** with sentence-by-sentence, word-by-word, and instant display modes (150 to 300 WPM)
 - **Customizable display** including font family, size, color themes (light, dark, high contrast), and line height
-- **Multiple viewing options**: operator control panel, fullscreen display window, and networked viewers for phones and tablets via WebSocket
-- **Bible reference detection** that automatically formats spoken references (e.g., "John 316", "John chapter 3 verse 16") into a standardized bold display
+- **Multiple viewing options**: operator control panel, up to two fullscreen display windows on separate monitors, and networked viewers for phones and tablets via WebSocket
+- **Per-device language choice** so each phone picks English, Spanish, or both independently
+- **Bible reference detection** that automatically formats spoken references (e.g., "John 316", "John chapter 3 verse 16", "Proverbs twenty four verse eleven") into a standardized bold display
 - **QR code generation** for easy connection from mobile devices on the same network
 - **Session management** with start, pause, resume, stop, and transcript export to text file
 - **Audio input testing** to verify microphone or line-in levels before starting a session
@@ -79,7 +82,7 @@ npm start
 
 Works the same on macOS, Windows, and Linux. On Windows, run this from PowerShell, Command Prompt, or Windows Terminal in the project folder.
 
-On first launch, AutoScribe will download the Whisper speech recognition model (approximately 250 MB). A progress bar in the control panel shows download progress. This only happens once; the model is cached locally for future use.
+On first launch, AutoScribe will download the Whisper speech recognition model (approximately 250 MB). A progress bar in the control panel shows download progress. This only happens once; the model is cached locally for future use. Enabling Spanish translation downloads a second, much smaller model (~75 MB) the first time it is switched on.
 
 The first time you start a session, your OS may prompt for microphone permission (macOS) or show a Windows Defender Firewall dialog when the network viewer server starts. Allow both — the firewall rule only needs to cover **private networks**.
 
@@ -119,7 +122,7 @@ Runs ESLint with `@typescript-eslint/recommended` rules across all `src/` TypeSc
 npm test
 ```
 
-Runs the Jest test suite. Tests cover the Bible reference parser across standard, spoken, range, and edge-case formats.
+Runs the Jest test suite (142 tests). Coverage includes the Bible reference parser across standard, spoken, range and edge-case formats, the verse-count data table, transcript editing and pacing-queue behaviour, and the translation engine's queue.
 
 ## Architecture
 
@@ -129,9 +132,10 @@ AutoScribe is built with Electron and uses a multi-window architecture:
 Main Process
   ├── Audio Capture (node-record-lpcm16 + SoX)
   ├── Whisper STT Engine (@huggingface/transformers, ONNX)
+  ├── Translation Engine (opus-mt-en-es, English → Spanish)
   ├── Pacing Controller (WPM throttling and sentence segmentation)
-  ├── Control Window (operator interface)
-  ├── Display Window (fullscreen paced output)
+  ├── Control Window (operator interface, editable transcript)
+  ├── Display Window ×2 (fullscreen paced output, one language each)
   └── Network Server (Express + WebSocket for remote viewers)
 ```
 
@@ -143,9 +147,36 @@ Audio is captured from a microphone or soundboard input at 16kHz mono PCM, then 
 
 The operator always sees transcription output immediately. The display window and network viewers receive paced output according to the configured WPM setting, giving the audience time to read comfortably.
 
+### Editing the Transcript
+
+Click any line in the control panel's Live Transcript to correct it — Enter saves, Shift+Enter adds a line, Escape cancels. Corrections propagate immediately to the display windows and every connected phone, are re-translated if Spanish is enabled, and are what gets written when you export.
+
+If a segment is still waiting in the pacing queue, the correction is applied before it is ever shown, so the audience never sees the original text.
+
+### Spanish Translation
+
+Whisper itself cannot translate *into* Spanish — its translate task only ever produces English. AutoScribe therefore runs a second model, Helsinki-NLP's `opus-mt-en-es` (~75MB quantized), on-device alongside Whisper. It is downloaded the first time you enable translation and never again.
+
+Translation never delays the English text: segments are displayed as soon as they are transcribed, and the Spanish arrives a fraction of a second later and is merged into the line it belongs to.
+
+Each display surface chooses its own language, so you can run any of these at once:
+
+| Arrangement | How to set it up |
+|-------------|------------------|
+| English and Spanish side by side | Set **Display 1 shows** to *Both* |
+| Spanish on its own screen | Open **Display 2**, assign it a monitor, set **Display 2 shows** to *Spanish* |
+| Spanish only, one projector | Set **Display 1 shows** to *Spanish* |
+| Different language per phone | Each viewer picks from the bar at the bottom of the page |
+
+Surfaces set to Spanish hold a line back until its translation arrives, so a screen labelled Spanish never briefly shows English.
+
+### Multiple Monitors
+
+The **Screens** section lists every connected monitor and lets you open, close, and place each display window. A window is created directly on its target monitor rather than appearing on the operator's screen first. Plugging in or unplugging a projector updates the list automatically.
+
 ### Network Viewers
 
-When the network server is enabled, any device on the same local network can connect via a web browser to view the live transcription. The viewer page is fully self-contained and adjusts to the display settings configured by the operator.
+When the network server is enabled, any device on the same local network can connect via a web browser to view the live transcription. The viewer page is fully self-contained and adjusts to the display settings configured by the operator. When translation is on, each phone gets a language switcher and remembers its own choice — one person switching to Spanish does not change what anyone else sees.
 
 ## Tech Stack
 
@@ -154,6 +185,7 @@ When the network server is enabled, any device on the same local network can con
 | Framework | Electron 40, TypeScript 5 |
 | UI | React 18, TailwindCSS 3 |
 | Speech-to-Text | Whisper (onnx-community/whisper-small) via @huggingface/transformers |
+| Translation | opus-mt-en-es (Xenova/opus-mt-en-es, MarianMT) via @huggingface/transformers |
 | Audio Capture | node-record-lpcm16, SoX |
 | Network | Express 5, WebSocket (ws) |
 | Build | electron-forge, Webpack |
@@ -169,6 +201,7 @@ src/
   main/                  # Electron main process
     audio/               # Audio capture and processing
     stt/                 # Speech-to-text engine (Whisper)
+    translation/         # English → Spanish translation engine
     transcript/          # Buffer, pacing controller, storage
     server/              # HTTP + WebSocket server for network viewers
     ipc/                 # IPC handler registration
@@ -198,6 +231,8 @@ All settings are adjustable from the control panel at runtime and are **automati
 | Display Theme | Light, Dark, High Contrast |
 | Control Panel Theme | Light, Dark, High Contrast |
 | Language | English, Spanish, Spanish to English translation |
+| Spanish Translation | Off, or per-surface: English / Spanish / Both |
+| Display Windows | Up to two, each assignable to any connected monitor |
 | Audio Input | Microphone or Line-in, with device selection |
 
 ### Where files are stored
