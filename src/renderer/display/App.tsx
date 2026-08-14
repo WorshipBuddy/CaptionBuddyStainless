@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { DisplayAPI } from '../../preload/display';
-import { DisplaySettings, DEFAULT_SETTINGS } from '../../shared/types/settings';
+import { DisplaySettings, DEFAULT_SETTINGS, LanguageMode } from '../../shared/types/settings';
 import { parseBibleReferences } from '../../shared/bibleReferences';
 
 declare global {
@@ -12,20 +12,51 @@ declare global {
 interface DisplayLine {
   id: string;
   text: string;
+  translation?: string;
+}
+
+/** Renders one line with Bible references pulled out and bolded. */
+function LineBody({ text }: { text: string }) {
+  const parts = parseBibleReferences(text);
+  return (
+    <>
+      {parts.map((part, pi) =>
+        part.isReference ? (
+          <p key={pi} className="font-bold my-2">{part.text}</p>
+        ) : (
+          <span key={pi}>{part.text}</span>
+        )
+      )}
+    </>
+  );
 }
 
 export function DisplayApp() {
   const [displaySettings, setDisplaySettings] = useState<DisplaySettings>(DEFAULT_SETTINGS.display);
   const [lines, setLines] = useState<DisplayLine[]>([]);
+  const [languageMode, setLanguageMode] = useState<LanguageMode>('english');
   const bottomRef = useRef<HTMLDivElement>(null);
+  const spanishBottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     window.autoscribe.getSettings().then((settings) => {
       setDisplaySettings(settings.display);
+      // Each window asks for the language belonging to its own role, which is
+      // what allows English on one projector and Spanish on another.
+      const translation = settings.translation ?? DEFAULT_SETTINGS.translation;
+      setLanguageMode(
+        window.autoscribe.role === 'secondary'
+          ? translation.secondaryLanguage
+          : translation.displayLanguage
+      );
     });
 
     const unsubSettings = window.autoscribe.onDisplaySettingsUpdate((settings) => {
       setDisplaySettings(settings);
+    });
+
+    const unsubLanguage = window.autoscribe.onLanguageModeSet((mode) => {
+      setLanguageMode(mode);
     });
 
     const unsubTranscript = window.autoscribe.onTranscriptSegment((paced) => {
@@ -35,9 +66,9 @@ export function DisplayApp() {
         // Check if this segment ID already exists (streaming mode updates)
         const existingIndex = prev.findIndex((line) => line.id === id);
         if (existingIndex !== -1) {
-          // Update existing line in place
+          // Update existing line in place, keeping any translation already in
           const updated = [...prev];
-          updated[existingIndex] = { id, text };
+          updated[existingIndex] = { ...updated[existingIndex], id, text };
           return updated;
         }
 
@@ -55,7 +86,19 @@ export function DisplayApp() {
         const index = prev.findIndex((line) => line.id === id);
         if (index === -1) return prev;
         const updated = [...prev];
-        updated[index] = { id, text };
+        // The correction invalidates the old translation; it will be replaced
+        // when the retranslation lands.
+        updated[index] = { id, text, translation: undefined };
+        return updated;
+      });
+    });
+
+    const unsubTranslation = window.autoscribe.onTranslationSegment(({ id, translation }) => {
+      setLines((prev) => {
+        const index = prev.findIndex((line) => line.id === id);
+        if (index === -1) return prev;
+        const updated = [...prev];
+        updated[index] = { ...updated[index], translation };
         return updated;
       });
     });
@@ -66,8 +109,10 @@ export function DisplayApp() {
 
     return () => {
       unsubSettings();
+      unsubLanguage();
       unsubTranscript();
       unsubUpdate();
+      unsubTranslation();
       unsubClear();
     };
   }, []);
@@ -76,7 +121,8 @@ export function DisplayApp() {
   // changes (e.g. font size) so a mid-session resize doesn't lose scroll position.
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [lines, displaySettings]);
+    spanishBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [lines, displaySettings, languageMode]);
 
   // Toggle fullscreen on double-click
   const handleDoubleClick = () => {
@@ -96,6 +142,41 @@ export function DisplayApp() {
     textAlign: displaySettings.textAlign as React.CSSProperties['textAlign'],
   };
 
+  // In Spanish-only mode a line is held back until its translation arrives,
+  // so the congregation never sees English on a screen labelled Spanish.
+  const spanishLines = lines.filter((line) => !!line.translation);
+
+  const renderColumn = (
+    columnLines: DisplayLine[],
+    pick: (line: DisplayLine) => string,
+    endRef: React.RefObject<HTMLDivElement>,
+    emptyLabel: string,
+    heading?: string
+  ) => (
+    <div className="flex-1 overflow-y-auto p-8 min-w-0" style={containerStyle}>
+      {heading && (
+        <div className="sticky top-0 text-xs uppercase tracking-widest opacity-40 pb-2">
+          {heading}
+        </div>
+      )}
+      <div className="flex-grow" style={{ minHeight: 'calc(100vh - 12rem)' }} />
+      {columnLines.length === 0 ? (
+        <p className="opacity-20 text-center">{emptyLabel}</p>
+      ) : (
+        columnLines.map((line, i) => {
+          const recency = (i + 1) / columnLines.length;
+          const opacity = Math.max(0.3, recency);
+          return (
+            <div key={line.id} className="mb-3 transition-opacity duration-500" style={{ opacity }}>
+              <LineBody text={pick(line)} />
+            </div>
+          );
+        })
+      )}
+      <div ref={endRef} />
+    </div>
+  );
+
   return (
     <div
       className="h-screen flex flex-col cursor-default select-none"
@@ -104,44 +185,33 @@ export function DisplayApp() {
     >
       {/* Minimal top bar - only visible on hover */}
       <div className="opacity-0 hover:opacity-100 transition-opacity duration-300 absolute top-0 left-0 right-0 z-10 bg-black/20 px-4 py-1 flex justify-between items-center">
-        <span className="text-white/60 text-xs">AutoScribe Display</span>
+        <span className="text-white/60 text-xs">
+          AutoScribe Display{window.autoscribe.role === 'secondary' ? ' 2' : ''}
+        </span>
         <span className="text-white/60 text-xs">Double-click for fullscreen</span>
       </div>
 
-      {/* Transcript display */}
-      <div
-        className="flex-1 overflow-y-auto p-8"
-        style={containerStyle}
-      >
-        {/* Spacer pushes content to bottom when there's little text */}
-        <div className="flex-grow" style={{ minHeight: 'calc(100vh - 8rem)' }} />
-        {lines.length === 0 ? (
-          <p className="opacity-20 text-center">Waiting for transcription...</p>
-        ) : (
-          lines.map((line, i) => {
-            // Most recent lines are fully opaque, older ones fade
-            const recency = (i + 1) / lines.length;
-            const opacity = Math.max(0.3, recency);
-            const parts = parseBibleReferences(line.text);
-            return (
-              <div
-                key={line.id}
-                className="mb-3 transition-opacity duration-500"
-                style={{ opacity }}
-              >
-                {parts.map((part, pi) =>
-                  part.isReference ? (
-                    <p key={pi} className="font-bold my-2">{part.text}</p>
-                  ) : (
-                    <span key={pi}>{part.text}</span>
-                  )
-                )}
-              </div>
-            );
-          })
-        )}
-        <div ref={bottomRef} />
-      </div>
+      {languageMode === 'both' ? (
+        <div className="flex-1 flex flex-row min-h-0 divide-x divide-current/10">
+          {renderColumn(lines, (l) => l.text, bottomRef, 'Waiting for transcription...', 'English')}
+          {renderColumn(
+            spanishLines,
+            (l) => l.translation ?? '',
+            spanishBottomRef,
+            'Esperando traducción...',
+            'Español'
+          )}
+        </div>
+      ) : languageMode === 'spanish' ? (
+        renderColumn(
+          spanishLines,
+          (l) => l.translation ?? '',
+          spanishBottomRef,
+          'Esperando traducción...'
+        )
+      ) : (
+        renderColumn(lines, (l) => l.text, bottomRef, 'Waiting for transcription...')
+      )}
     </div>
   );
 }

@@ -32,6 +32,18 @@ export class TranscriptBuffer {
     return updated;
   }
 
+  /**
+   * Attach a translation to a buffered segment. Returns the updated segment,
+   * or null if it aged out while the translation model was working.
+   */
+  setTranslation(id: string, translation: string): TranscriptSegment | null {
+    const index = this.segments.findIndex((s) => s.id === id);
+    if (index === -1) return null;
+    const updated = { ...this.segments[index], translation };
+    this.segments[index] = updated;
+    return updated;
+  }
+
   getAll(): TranscriptSegment[] {
     return [...this.segments];
   }

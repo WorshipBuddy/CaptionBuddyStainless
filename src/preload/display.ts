@@ -1,8 +1,17 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { IPC_CHANNELS, PacedSegment, SegmentUpdate } from '../shared/types/ipc';
-import { DisplaySettings, PacingSettings } from '../shared/types/settings';
+import { IPC_CHANNELS, PacedSegment, SegmentUpdate, SegmentTranslation } from '../shared/types/ipc';
+import { DisplaySettings, PacingSettings, LanguageMode } from '../shared/types/settings';
+
+/**
+ * Which window this is. Both display windows load the same bundle, so the
+ * role travels in the URL hash and decides which language setting applies.
+ */
+const role: 'primary' | 'secondary' =
+  window.location.hash.includes('role=secondary') ? 'secondary' : 'primary';
 
 const displayAPI = {
+  /** 'primary' or 'secondary' — which projected window this renderer is. */
+  role,
   // Receive paced transcript segments
   onTranscriptSegment: (callback: (paced: PacedSegment) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, paced: PacedSegment) => callback(paced);
@@ -29,6 +38,20 @@ const displayAPI = {
     const listener = (_event: Electron.IpcRendererEvent, settings: PacingSettings) => callback(settings);
     ipcRenderer.on(IPC_CHANNELS.SETTINGS_PACING_UPDATE, listener);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.SETTINGS_PACING_UPDATE, listener);
+  },
+
+  // Receive translations as the model finishes each segment
+  onTranslationSegment: (callback: (update: SegmentTranslation) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, update: SegmentTranslation) => callback(update);
+    ipcRenderer.on(IPC_CHANNELS.TRANSLATION_SEGMENT, listener);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.TRANSLATION_SEGMENT, listener);
+  },
+
+  // Receive the language mode this particular window should render
+  onLanguageModeSet: (callback: (mode: LanguageMode) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, mode: LanguageMode) => callback(mode);
+    ipcRenderer.on(IPC_CHANNELS.TRANSLATION_LANGUAGE_SET, listener);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.TRANSLATION_LANGUAGE_SET, listener);
   },
 
   // Clear transcript display

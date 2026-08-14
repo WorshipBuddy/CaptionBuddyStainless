@@ -5,11 +5,11 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { networkInterfaces } from 'os';
 import QRCode from 'qrcode';
 import { TranscriptSegment } from '../../shared/types/transcript';
-import { DisplaySettings, DEFAULT_SETTINGS } from '../../shared/types/settings';
-import { PacedSegment, NetworkStatus, SegmentUpdate } from '../../shared/types/ipc';
+import { DisplaySettings, DEFAULT_SETTINGS, LanguageMode } from '../../shared/types/settings';
+import { PacedSegment, NetworkStatus, SegmentUpdate, SegmentTranslation } from '../../shared/types/ipc';
 
 interface WSMessage {
-  type: 'segment' | 'update' | 'settings' | 'clear' | 'welcome';
+  type: 'segment' | 'update' | 'translation' | 'translation-enabled' | 'settings' | 'clear' | 'welcome';
   payload: unknown;
 }
 
@@ -22,6 +22,8 @@ export class NetworkServer extends EventEmitter {
   private displaySettings: DisplaySettings = { ...DEFAULT_SETTINGS.display };
   private recentSegments: TranscriptSegment[] = [];
   private readonly maxRecentSegments = 50;
+  private translationEnabled = false;
+  private viewerDefaultLanguage: LanguageMode = 'english';
 
   constructor(port = 8080) {
     super();
@@ -80,6 +82,8 @@ export class NetworkServer extends EventEmitter {
         payload: {
           settings: this.displaySettings,
           recentSegments: this.recentSegments,
+          translationEnabled: this.translationEnabled,
+          defaultLanguage: this.viewerDefaultLanguage,
         },
       };
       ws.send(JSON.stringify(welcome));
@@ -148,6 +152,32 @@ export class NetworkServer extends EventEmitter {
       this.recentSegments[index] = { ...this.recentSegments[index], text: update.text };
     }
     this.broadcast({ type: 'update', payload: update });
+  }
+
+  /**
+   * Push a finished translation. Viewers hold both languages and render the
+   * one each device has chosen, so this is sent to everyone regardless of
+   * what any individual phone is currently showing.
+   */
+  broadcastTranslation(update: SegmentTranslation): void {
+    const index = this.recentSegments.findIndex((s) => s.id === update.id);
+    if (index !== -1) {
+      this.recentSegments[index] = {
+        ...this.recentSegments[index],
+        translation: update.translation,
+      };
+    }
+    this.broadcast({ type: 'translation', payload: update });
+  }
+
+  /** Show or hide the language switcher on connected phones. */
+  broadcastTranslationEnabled(enabled: boolean): void {
+    this.translationEnabled = enabled;
+    this.broadcast({ type: 'translation-enabled', payload: { enabled } });
+  }
+
+  setViewerDefaultLanguage(language: LanguageMode): void {
+    this.viewerDefaultLanguage = language;
   }
 
   broadcastSettings(settings: DisplaySettings): void {
@@ -239,13 +269,63 @@ export class NetworkServer extends EventEmitter {
       font-size: 1.5rem;
     }
 
+    /* Language switcher — each device chooses for itself */
+    #langbar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      display: flex;
+      gap: 0.5rem;
+      justify-content: center;
+      padding: 0.5rem;
+      background: rgba(127, 127, 127, 0.15);
+      backdrop-filter: blur(6px);
+      z-index: 10;
+    }
+
+    .lang-btn {
+      flex: 1 1 0;
+      max-width: 10rem;
+      padding: 0.6rem 0.5rem;
+      font-size: 0.95rem;
+      font-family: inherit;
+      color: inherit;
+      background: rgba(127, 127, 127, 0.2);
+      border: 1px solid rgba(127, 127, 127, 0.4);
+      border-radius: 0.4rem;
+      cursor: pointer;
+    }
+
+    .lang-btn.active {
+      background: #2563eb;
+      border-color: #2563eb;
+      color: #fff;
+      font-weight: 600;
+    }
+
+    .translation {
+      margin-top: 0.35rem;
+      opacity: 0.75;
+      font-style: italic;
+    }
+
+    /* Keep the last line clear of the switcher */
+    body.has-langbar #container { padding-bottom: 4.5rem; }
+
     @media (max-width: 640px) {
       #container { padding: 1rem; }
+      body.has-langbar #container { padding-bottom: 4.5rem; }
     }
   </style>
 </head>
 <body>
   <div id="status" class="status-connecting">Connecting...</div>
+  <div id="langbar" style="display:none">
+    <button class="lang-btn active" data-lang="english">English</button>
+    <button class="lang-btn" data-lang="spanish">Espa&ntilde;ol</button>
+    <button class="lang-btn" data-lang="both">Ambos</button>
+  </div>
   <div id="container">
     <p id="waiting">Waiting for transcription...</p>
   </div>
@@ -254,11 +334,18 @@ export class NetworkServer extends EventEmitter {
     const container = document.getElementById('container');
     const statusEl = document.getElementById('status');
     const waitingEl = document.getElementById('waiting');
+    const langBar = document.getElementById('langbar');
+    const langButtons = document.querySelectorAll('.lang-btn');
     const MAX_LINES = 30;
     let lines = [];
     let settings = {};
     let ws;
     let reconnectTimer;
+    let translationAvailable = false;
+    // Each phone remembers its own choice, so one person switching to Spanish
+    // does not change what anyone else is reading.
+    let language = 'english';
+    try { language = localStorage.getItem('autoscribe-language') || 'english'; } catch (e) { /* private mode */ }
 
     function applySettings(s) {
       settings = s;
@@ -353,6 +440,24 @@ export class NetworkServer extends EventEmitter {
         const recency = (i + 1) / lines.length;
         div.style.opacity = Math.max(0.3, recency);
 
+        // In "both" mode the Spanish sits under the English in a lighter
+        // weight; in Spanish-only mode the English line is held until its
+        // translation arrives, so the reader never sees the wrong language.
+        const showEnglish = language !== 'spanish';
+        const showSpanish = language !== 'english' && !!line.translation;
+
+        if (language === 'spanish' && !line.translation) {
+          return;
+        }
+
+        if (showSpanish && !showEnglish) {
+          const p = document.createElement('p');
+          p.textContent = line.translation;
+          div.appendChild(p);
+          container.appendChild(div);
+          return;
+        }
+
         const parts = formatWithBibleRefs(line.text);
         parts.forEach(part => {
           if (part.isRef) {
@@ -368,6 +473,13 @@ export class NetworkServer extends EventEmitter {
           }
         });
 
+        if (showSpanish) {
+          const p = document.createElement('p');
+          p.className = 'translation';
+          p.textContent = line.translation;
+          div.appendChild(p);
+        }
+
         container.appendChild(div);
       });
 
@@ -379,9 +491,13 @@ export class NetworkServer extends EventEmitter {
       // rather than append or the same sentence stacks up line after line.
       const existing = lines.findIndex(function (l) { return l.id === segment.id; });
       if (existing !== -1) {
-        lines[existing] = { id: segment.id, text: segment.text };
+        lines[existing] = {
+          id: segment.id,
+          text: segment.text,
+          translation: segment.translation || lines[existing].translation
+        };
       } else {
-        lines.push({ id: segment.id, text: segment.text });
+        lines.push({ id: segment.id, text: segment.text, translation: segment.translation || '' });
         if (lines.length > MAX_LINES) {
           lines = lines.slice(-MAX_LINES);
         }
@@ -392,9 +508,44 @@ export class NetworkServer extends EventEmitter {
     function updateSegment(update) {
       const index = lines.findIndex(function (l) { return l.id === update.id; });
       if (index === -1) return;
-      lines[index] = { id: update.id, text: update.text };
+      // The English text changed, so the old translation no longer matches it.
+      // Drop it and wait for the retranslation the operator's edit triggered.
+      lines[index] = { id: update.id, text: update.text, translation: '' };
       renderLines();
     }
+
+    function setTranslation(update) {
+      const index = lines.findIndex(function (l) { return l.id === update.id; });
+      if (index === -1) return;
+      lines[index].translation = update.translation;
+      renderLines();
+    }
+
+    function setLanguage(next) {
+      language = next;
+      try { localStorage.setItem('autoscribe-language', next); } catch (e) { /* private mode */ }
+      Array.prototype.forEach.call(langButtons, function (btn) {
+        btn.className = btn.getAttribute('data-lang') === next ? 'lang-btn active' : 'lang-btn';
+      });
+      renderLines();
+    }
+
+    function setTranslationAvailable(enabled) {
+      translationAvailable = enabled;
+      langBar.style.display = enabled ? 'flex' : 'none';
+      document.body.className = enabled ? 'has-langbar' : '';
+      // If the operator turns translation off while a phone is showing
+      // Spanish, that phone would otherwise be left with a blank screen.
+      if (!enabled && language !== 'english') {
+        setLanguage('english');
+      }
+    }
+
+    Array.prototype.forEach.call(langButtons, function (btn) {
+      btn.addEventListener('click', function () {
+        setLanguage(btn.getAttribute('data-lang'));
+      });
+    });
 
     function connect() {
       const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -422,10 +573,16 @@ export class NetworkServer extends EventEmitter {
         switch (msg.type) {
           case 'welcome':
             if (msg.payload.settings) applySettings(msg.payload.settings);
+            // A phone that has never chosen a language follows the operator's
+            // default; one that has chosen keeps its own choice on reconnect.
+            var stored = null;
+            try { stored = localStorage.getItem('autoscribe-language'); } catch (e) { /* private mode */ }
+            setLanguage(stored || msg.payload.defaultLanguage || 'english');
+            setTranslationAvailable(!!msg.payload.translationEnabled);
             if (msg.payload.recentSegments) {
               lines = [];
               msg.payload.recentSegments.forEach(seg => {
-                lines.push({ id: seg.id, text: seg.text });
+                lines.push({ id: seg.id, text: seg.text, translation: seg.translation || '' });
               });
               if (lines.length > MAX_LINES) lines = lines.slice(-MAX_LINES);
               renderLines();
@@ -436,6 +593,12 @@ export class NetworkServer extends EventEmitter {
             break;
           case 'update':
             updateSegment(msg.payload);
+            break;
+          case 'translation':
+            setTranslation(msg.payload);
+            break;
+          case 'translation-enabled':
+            setTranslationAvailable(!!msg.payload.enabled);
             break;
           case 'settings':
             applySettings(msg.payload);

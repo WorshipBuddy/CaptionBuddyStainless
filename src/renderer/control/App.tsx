@@ -1,7 +1,18 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { ControlAPI } from '../../preload/control';
 import { TranscriptSegment } from '../../shared/types/transcript';
-import { AudioDevice, NetworkStatus, AppStatusEvent } from '../../shared/types/ipc';
+import {
+  AudioDevice,
+  NetworkStatus,
+  AppStatusEvent,
+  ScreenInfo,
+  DisplayWindowState,
+} from '../../shared/types/ipc';
+import {
+  TranslationSettings,
+  DEFAULT_SETTINGS,
+  LanguageMode,
+} from '../../shared/types/settings';
 import { parseBibleReferences } from '../../shared/bibleReferences';
 import logoSrc from '../../assets/logo.png';
 
@@ -29,6 +40,12 @@ const CONTROL_THEMES: Record<ControlTheme, { bg: string; sidebar: string; border
     text: 'text-yellow-300', textMuted: 'text-yellow-400', textFaint: 'text-yellow-500',
     input: 'bg-black border-yellow-400 text-yellow-300', header: 'bg-black',
   },
+};
+
+const LANGUAGE_LABELS: Record<LanguageMode, string> = {
+  english: 'English',
+  spanish: 'Spanish',
+  both: 'Both',
 };
 
 function FormattedSegment({ text, className }: { text: string; className?: string }) {
@@ -186,6 +203,14 @@ export function ControlApp() {
   const [selectedDevice, setSelectedDevice] = useState('default');
   const [inputType, setInputType] = useState<'microphone' | 'line-in'>('microphone');
   const [audioTesting, setAudioTesting] = useState(false);
+  const [translation, setTranslation] = useState<TranslationSettings>(DEFAULT_SETTINGS.translation);
+  const [screens, setScreens] = useState<ScreenInfo[]>([]);
+  const [windowState, setWindowState] = useState<DisplayWindowState>({
+    primaryOpen: false,
+    secondaryOpen: false,
+    primaryScreenId: null,
+    secondaryScreenId: null,
+  });
   const transcriptEndRef = useRef<HTMLDivElement>(null);
   const wpmDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -237,6 +262,9 @@ export function ControlApp() {
         setSelectedDevice(settings.audio.deviceId);
         setInputType(settings.audio.inputType);
       }
+      if (settings.translation) {
+        setTranslation({ ...DEFAULT_SETTINGS.translation, ...settings.translation });
+      }
     });
   }, []);
 
@@ -277,6 +305,36 @@ export function ControlApp() {
       prev.map((s) => (s.id === id ? { ...s, text, editedAt: Date.now() } : s))
     );
     window.autoscribe.updateSegment(id, text);
+  }, []);
+
+  // Translations arrive after their segment, so they are merged in by id.
+  useEffect(() => {
+    const unsub = window.autoscribe.onTranslationSegment(({ id, translation: text }) => {
+      setSegments((prev) => prev.map((s) => (s.id === id ? { ...s, translation: text } : s)));
+    });
+    return unsub;
+  }, []);
+
+  // Window/monitor state is pushed from main, since display windows can be
+  // closed directly and projectors can be plugged in mid-service.
+  useEffect(() => {
+    const refresh = () => {
+      window.autoscribe.getScreens().then(setScreens);
+      window.autoscribe.getDisplayWindowState().then(setWindowState);
+    };
+    refresh();
+    const unsub = window.autoscribe.onDisplayWindowState((state) => {
+      setWindowState(state);
+      window.autoscribe.getScreens().then(setScreens);
+    });
+    return unsub;
+  }, []);
+
+  const updateTranslation = useCallback(async (partial: Partial<TranslationSettings>) => {
+    // Optimistic, so the toggles feel instant even while the model loads.
+    setTranslation((prev) => ({ ...prev, ...partial }));
+    const applied = await window.autoscribe.updateTranslationSettings(partial);
+    if (applied) setTranslation(applied);
   }, []);
 
   const sendDisplaySettings = (partial: Record<string, unknown>) => {
@@ -698,6 +756,136 @@ export function ControlApp() {
                 </button>
               ))}
             </div>
+          </section>
+
+          <hr className={t.border} />
+
+          {/* Projected screens */}
+          <section>
+            <h2 className={`text-xs font-semibold ${t.textFaint} uppercase tracking-wide mb-2`}>Screens</h2>
+
+            {(['primary', 'secondary'] as const).map((role) => {
+              const isOpen = role === 'primary' ? windowState.primaryOpen : windowState.secondaryOpen;
+              const currentScreen =
+                role === 'primary' ? windowState.primaryScreenId : windowState.secondaryScreenId;
+
+              return (
+                <div key={role} className="mb-3 last:mb-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={`text-xs ${t.textMuted}`}>
+                      {role === 'primary' ? 'Display 1' : 'Display 2'}
+                    </span>
+                    <button
+                      className={`text-xs font-medium ${
+                        isOpen ? 'text-orange-400 hover:text-orange-300' : 'text-blue-400 hover:text-blue-300'
+                      }`}
+                      onClick={() => {
+                        if (role === 'primary') {
+                          if (isOpen) {
+                            window.autoscribe.closeDisplay();
+                          } else {
+                            window.autoscribe.openDisplay();
+                          }
+                        } else if (isOpen) {
+                          window.autoscribe.closeSecondaryDisplay();
+                        } else {
+                          window.autoscribe.openSecondaryDisplay();
+                        }
+                      }}
+                    >
+                      {isOpen ? 'Close' : 'Open'}
+                    </button>
+                  </div>
+                  <select
+                    className={`w-full border rounded px-2 py-1.5 text-sm ${t.input} disabled:opacity-40`}
+                    disabled={!isOpen || screens.length === 0}
+                    value={currentScreen ?? ''}
+                    onChange={(e) => {
+                      const screenId = Number(e.target.value);
+                      if (!isNaN(screenId)) {
+                        window.autoscribe.moveDisplayToScreen(role, screenId);
+                      }
+                    }}
+                  >
+                    {!isOpen && <option value="">Window not open</option>}
+                    {screens.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.label} — {s.width}×{s.height}
+                        {s.isPrimary ? ' (main)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {isOpen && translation.enabled && (
+                    <p className={`text-xs ${t.textFaint} mt-1`}>
+                      Showing{' '}
+                      {LANGUAGE_LABELS[
+                        role === 'primary' ? translation.displayLanguage : translation.secondaryLanguage
+                      ]}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+
+            {screens.length < 2 && (
+              <p className={`text-xs ${t.textFaint} mt-1`}>
+                Only one screen detected. Connect a projector to send a display to it.
+              </p>
+            )}
+          </section>
+
+          <hr className={t.border} />
+
+          {/* Spanish translation */}
+          <section>
+            <h2 className={`text-xs font-semibold ${t.textFaint} uppercase tracking-wide mb-2`}>
+              Spanish Translation
+            </h2>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={translation.enabled}
+                onChange={(e) => updateTranslation({ enabled: e.target.checked })}
+              />
+              <span className={`text-sm ${t.text}`}>Translate to Spanish</span>
+            </label>
+            <p className={`text-xs ${t.textFaint} mt-1`}>
+              {translation.enabled
+                ? 'Runs on-device alongside transcription.'
+                : 'First use downloads a ~75MB model.'}
+            </p>
+
+            {translation.enabled && (
+              <div className="mt-3 space-y-3">
+                {([
+                  ['displayLanguage', 'Display 1 shows'],
+                  ['secondaryLanguage', 'Display 2 shows'],
+                  ['viewerDefaultLanguage', 'Phones default to'],
+                ] as const).map(([key, label]) => (
+                  <div key={key}>
+                    <label className={`block text-xs ${t.textMuted} mb-1`}>{label}</label>
+                    <div className="flex gap-1.5">
+                      {(['english', 'spanish', 'both'] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          className={`flex-1 px-2 py-1 text-xs border rounded ${
+                            translation[key] === mode
+                              ? 'border-blue-500 bg-blue-500/20 text-blue-400'
+                              : `${t.border} hover:opacity-80 ${t.textMuted}`
+                          }`}
+                          onClick={() => updateTranslation({ [key]: mode })}
+                        >
+                          {LANGUAGE_LABELS[mode]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                <p className={`text-xs ${t.textFaint}`}>
+                  Each phone can override its language on the viewer page.
+                </p>
+              </div>
+            )}
           </section>
 
           <hr className={t.border} />

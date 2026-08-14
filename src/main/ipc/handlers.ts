@@ -1,8 +1,8 @@
 import { ipcMain, dialog } from 'electron';
 import { writeFile } from 'fs/promises';
 import { v4 as uuid } from 'uuid';
-import { IPC_CHANNELS, SessionStatus, PacedSegment, AppStatusEvent, SegmentUpdate } from '../../shared/types/ipc';
-import { DEFAULT_SETTINGS, AudioSettings, PacingSettings, AppSettings } from '../../shared/types/settings';
+import { IPC_CHANNELS, SessionStatus, PacedSegment, AppStatusEvent, SegmentUpdate, SegmentTranslation } from '../../shared/types/ipc';
+import { DEFAULT_SETTINGS, AudioSettings, PacingSettings, AppSettings, TranslationSettings } from '../../shared/types/settings';
 import { TranscriptSegment } from '../../shared/types/transcript';
 import { AudioCaptureManager } from '../audio/AudioCaptureManager';
 import { WhisperEngine, WhisperTask } from '../stt/WhisperEngine';
@@ -10,17 +10,29 @@ import { STTResult } from '../stt/STTEngine';
 import { PacingController } from '../transcript/PacingController';
 import { TranscriptBuffer } from '../transcript/TranscriptBuffer';
 import { NetworkServer } from '../server/NetworkServer';
-import { createDisplayWindow, closeDisplayWindow, getControlWindow, getDisplayWindow } from '../index';
+import { TranslationEngine, TranslationResult } from '../translation/TranslationEngine';
+import {
+  createDisplayWindow,
+  closeDisplayWindow,
+  getControlWindow,
+  getDisplayWindows,
+  listScreens,
+  moveWindowToScreen,
+  getDisplayWindowState,
+  DisplayRole,
+} from '../index';
 
 const audioCapture = new AudioCaptureManager();
 const sttEngine = new WhisperEngine();
 const pacingController = new PacingController();
 const transcriptBuffer = new TranscriptBuffer();
 const networkServer = new NetworkServer();
+const translationEngine = new TranslationEngine();
 
 let sessionStatus: SessionStatus = 'idle';
 let currentAudioSettings: AudioSettings = { ...DEFAULT_SETTINGS.audio };
 let sttReady = false;
+let translationSettings: TranslationSettings = { ...DEFAULT_SETTINGS.translation };
 
 // Settings persistence via electron-store (ESM — loaded dynamically)
 let store: any = null;
@@ -39,7 +51,38 @@ let store: any = null;
   if (storedPacing) {
     pacingController.updateSettings({ ...DEFAULT_SETTINGS.pacing, ...storedPacing });
   }
+
+  // Restore translation settings, and start loading the model if it was left on
+  const storedTranslation = store.get('translation') as Partial<TranslationSettings> | undefined;
+  if (storedTranslation) {
+    translationSettings = { ...DEFAULT_SETTINGS.translation, ...storedTranslation };
+  }
+  networkServer.setViewerDefaultLanguage(translationSettings.viewerDefaultLanguage);
+  if (translationSettings.enabled) {
+    void ensureTranslationModel();
+  }
 })();
+
+/**
+ * Load the translation model on demand. Kept lazy so churches that never use
+ * Spanish never download it, and so toggling translation on mid-service does
+ * not block the transcript while the model loads.
+ */
+async function ensureTranslationModel(): Promise<boolean> {
+  if (translationEngine.isReady) return true;
+  try {
+    await translationEngine.init();
+    return true;
+  } catch (err) {
+    pushAppStatus({
+      type: 'error',
+      message: `Could not load the Spanish translation model: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    });
+    return false;
+  }
+}
 
 // Initialize STT engine on startup
 (async () => {
@@ -74,18 +117,60 @@ sttEngine.on('result', (result: STTResult) => {
 
   // Display window gets text through the pacing controller
   pacingController.enqueue(segment);
+
+  // Translation runs alongside, not in front: English must never wait on it.
+  if (translationSettings.enabled && translationEngine.isReady) {
+    translationEngine.translate(segment.id, segment.text);
+  }
 });
 
-// Paced output -> display window + network viewers
+// Paced output -> every open display window + network viewers
 pacingController.on('paced', (paced: PacedSegment) => {
-  const display = getDisplayWindow();
-  if (display && !display.isDestroyed()) {
-    display.webContents.send(IPC_CHANNELS.TRANSCRIPT_SEGMENT, paced);
+  for (const { win } of getDisplayWindows()) {
+    win.webContents.send(IPC_CHANNELS.TRANSCRIPT_SEGMENT, paced);
   }
   // Broadcast to network viewers
   if (networkServer.isRunning) {
     networkServer.broadcastSegment(paced);
   }
+});
+
+/**
+ * A finished translation arrives well after its segment has been displayed, so
+ * it is delivered as a late enrichment keyed by segment id. Every surface
+ * decides for itself whether to show it, which is what lets one screen run
+ * English, another Spanish, and each phone choose independently.
+ */
+translationEngine.on('result', ({ id, text }: TranslationResult) => {
+  const stored = transcriptBuffer.setTranslation(id, text);
+  if (!stored) return; // segment aged out while the model was working
+
+  const payload: SegmentTranslation = { id, translation: text };
+
+  const control = getControlWindow();
+  if (control && !control.isDestroyed()) {
+    control.webContents.send(IPC_CHANNELS.TRANSLATION_SEGMENT, payload);
+  }
+  for (const { win } of getDisplayWindows()) {
+    win.webContents.send(IPC_CHANNELS.TRANSLATION_SEGMENT, payload);
+  }
+  if (networkServer.isRunning) {
+    networkServer.broadcastTranslation(payload);
+  }
+});
+
+translationEngine.on('status', (msg: string) => {
+  console.log('[Translate]', msg);
+  pushAppStatus({ type: 'info', message: msg });
+});
+
+translationEngine.on('progress', (progress: number) => {
+  pushAppStatus({ type: 'progress', message: 'Loading Spanish model…', progress });
+});
+
+translationEngine.on('error', (err: Error) => {
+  console.error('[Translate] error:', err.message);
+  pushAppStatus({ type: 'warning', message: `Translation error: ${err.message}` });
 });
 
 function pushAppStatus(event: AppStatusEvent): void {
@@ -115,13 +200,33 @@ export function getAudioCapture(): AudioCaptureManager {
 
 export function registerIpcHandlers(): void {
   // Display window controls
-  ipcMain.on(IPC_CHANNELS.DISPLAY_OPEN, () => {
-    createDisplayWindow();
+  ipcMain.on(IPC_CHANNELS.DISPLAY_OPEN, (_event, screenId?: number) => {
+    createDisplayWindow('primary', screenId);
   });
 
   ipcMain.on(IPC_CHANNELS.DISPLAY_CLOSE, () => {
-    closeDisplayWindow();
+    closeDisplayWindow('primary');
   });
+
+  // Secondary display window — lets a second language be projected on its own
+  // monitor rather than sharing one screen with the English text.
+  ipcMain.on(IPC_CHANNELS.DISPLAY_SECONDARY_OPEN, (_event, screenId?: number) => {
+    createDisplayWindow('secondary', screenId);
+  });
+
+  ipcMain.on(IPC_CHANNELS.DISPLAY_SECONDARY_CLOSE, () => {
+    closeDisplayWindow('secondary');
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DISPLAY_SCREENS, async () => listScreens());
+
+  ipcMain.handle(
+    IPC_CHANNELS.DISPLAY_MOVE_TO_SCREEN,
+    async (_event, { role, screenId }: { role: DisplayRole; screenId: number }) =>
+      moveWindowToScreen(role, screenId)
+  );
+
+  ipcMain.handle(IPC_CHANNELS.DISPLAY_WINDOW_STATE, async () => getDisplayWindowState());
 
   // Operator correction to a transcript segment. The buffer is the source of
   // truth (and therefore what gets exported), so it is updated regardless of
@@ -133,16 +238,56 @@ export function registerIpcHandlers(): void {
     // If the segment is still queued, correcting it in place is enough — it
     // will be emitted with the new text when its turn comes.
     const stillQueued = pacingController.updateQueued(update.id, text);
-    if (stillQueued) return;
 
-    const display = getDisplayWindow();
-    if (display && !display.isDestroyed()) {
-      display.webContents.send(IPC_CHANNELS.TRANSCRIPT_UPDATE, { id: update.id, text });
+    if (!stillQueued) {
+      for (const { win } of getDisplayWindows()) {
+        win.webContents.send(IPC_CHANNELS.TRANSCRIPT_UPDATE, { id: update.id, text });
+      }
+      if (networkServer.isRunning) {
+        networkServer.broadcastSegmentUpdate({ id: update.id, text });
+      }
     }
-    if (networkServer.isRunning) {
-      networkServer.broadcastSegmentUpdate({ id: update.id, text });
+
+    // A correction invalidates any translation of the old text, so retranslate.
+    // This is the main reason to fix a misheard name: both languages follow.
+    if (translationSettings.enabled && translationEngine.isReady) {
+      translationEngine.translate(update.id, text);
     }
   });
+
+  // Translation settings
+  ipcMain.handle(
+    IPC_CHANNELS.TRANSLATION_SETTINGS_UPDATE,
+    async (_event, partial: Partial<TranslationSettings>) => {
+      const wasEnabled = translationSettings.enabled;
+      translationSettings = { ...translationSettings, ...partial };
+      if (store) store.set('translation', translationSettings);
+
+      networkServer.setViewerDefaultLanguage(translationSettings.viewerDefaultLanguage);
+
+      // Tell each display window which language(s) it should be rendering.
+      for (const { role, win } of getDisplayWindows()) {
+        win.webContents.send(
+          IPC_CHANNELS.TRANSLATION_LANGUAGE_SET,
+          role === 'primary'
+            ? translationSettings.displayLanguage
+            : translationSettings.secondaryLanguage
+        );
+      }
+      if (networkServer.isRunning) {
+        networkServer.broadcastTranslationEnabled(translationSettings.enabled);
+      }
+
+      if (translationSettings.enabled && !wasEnabled) {
+        // Loading can take a while on first run; do not block the reply.
+        void ensureTranslationModel();
+      } else if (!translationSettings.enabled && wasEnabled) {
+        translationEngine.clearQueue();
+      }
+
+      return translationSettings;
+    }
+  );
 
   // Settings
   ipcMain.handle(IPC_CHANNELS.SETTINGS_GET, async () => {
@@ -164,10 +309,9 @@ export function registerIpcHandlers(): void {
         const existing = (store.get('display') as object | undefined) ?? {};
         store.set('display', { ...existing, ...settings.display });
       }
-      // Forward display settings to display window
-      const display = getDisplayWindow();
-      if (display && !display.isDestroyed()) {
-        display.webContents.send(IPC_CHANNELS.SETTINGS_DISPLAY_UPDATE, settings.display);
+      // Forward display settings to every open display window
+      for (const { win } of getDisplayWindows()) {
+        win.webContents.send(IPC_CHANNELS.SETTINGS_DISPLAY_UPDATE, settings.display);
       }
       // Forward to network viewers
       if (networkServer.isRunning) {
@@ -256,6 +400,9 @@ export function registerIpcHandlers(): void {
     audioCapture.stop();
     audioCapture.removeAllListeners();
     pacingController.stop();
+    // Anything still waiting to be translated belongs to the session that just
+    // ended, so drop it rather than let it surface during the next one.
+    translationEngine.clearQueue();
 
     // Flush any remaining audio in the STT buffer
     if (sttReady) {

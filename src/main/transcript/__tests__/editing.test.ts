@@ -56,6 +56,39 @@ describe('TranscriptBuffer.update', () => {
     expect(buffer.getAll().map((s) => s.id)).toEqual(['b', 'c']);
   });
 
+  test('setTranslation attaches a translation without touching the text', () => {
+    const buffer = new TranscriptBuffer();
+    buffer.add(segment('a', 'good morning'));
+
+    const updated = buffer.setTranslation('a', 'buenos días');
+
+    expect(updated?.text).toBe('good morning');
+    expect(updated?.translation).toBe('buenos días');
+  });
+
+  test('setTranslation returns null once the segment has aged out', () => {
+    // Translation is async, so its segment can be evicted before it lands.
+    const buffer = new TranscriptBuffer(1);
+    buffer.add(segment('a', 'first'));
+    buffer.add(segment('b', 'second'));
+
+    expect(buffer.setTranslation('a', 'primero')).toBeNull();
+  });
+
+  test('a later edit clears nothing but is retranslated by the caller', () => {
+    const buffer = new TranscriptBuffer();
+    buffer.add(segment('a', 'Proverbs 2:4'));
+    buffer.setTranslation('a', 'Proverbios 2:4');
+
+    buffer.update('a', 'Proverbs 24:11');
+
+    // The buffer keeps the stale translation; handlers immediately requeue the
+    // corrected text, and the new translation overwrites it on arrival.
+    expect(buffer.getAll()[0].text).toBe('Proverbs 24:11');
+    buffer.setTranslation('a', 'Proverbios 24:11');
+    expect(buffer.getAll()[0].translation).toBe('Proverbios 24:11');
+  });
+
   test('edits are reflected in the exported transcript', () => {
     const buffer = new TranscriptBuffer();
     buffer.add(segment('a', 'turn to Proverbs 2:4'));

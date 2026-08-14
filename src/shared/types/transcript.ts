@@ -7,6 +7,8 @@ export interface TranscriptSegment {
   displayedAt?: number;
   /** Set when an operator corrected this segment's text from the control panel. */
   editedAt?: number;
+  /** Spanish translation, filled in asynchronously when translation is enabled. */
+  translation?: string;
 }
 
 export interface TranscriptSession {
