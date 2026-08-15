@@ -234,6 +234,14 @@ Tokens live in two places and should stay in step with the published system rath
 - `src/renderer/global.css` — CSS custom properties and the `.btn` / `.input` / `.badge` / `.callout` / `.seg` component classes
 - `tailwind.config.js` — the same palette, radii, shadows, spacing, and type scale as Tailwind theme values
 
+### Control panel light and dark mode
+
+The control panel ships in dark mode, as the design system prescribes for an operator view, and the sun/moon button in the header switches it. The choice is remembered per machine in `localStorage` and is re-applied before first paint, so relaunching does not flash the wrong palette.
+
+Components never hardcode a colour. They read `--ui-*` surface tokens which the two theme blocks in `global.css` redefine, surfaced to Tailwind as `bg-ui-surface`, `text-ui-muted`, `border-ui-border` and friends. Adding a component means using those tokens; both themes then follow for free.
+
+One rule is worth knowing before you reach for Violet on a dark surface: `#5B3FB0` scores only **2.2:1** on `#162032`, well under AA. Accent *text* on dark therefore uses the light tint `#E5DEF7` (12.5:1) via `--ui-accent`, and full-strength Violet stays where it reads properly — as a fill behind white text. Every `--ui-*` pairing is at AA or better in both themes.
+
 Typefaces are Satoshi (UI and caption text), JetBrains Mono (labels, language codes, status), and Instrument Serif (headings only — never live caption text). The desktop windows load them from Fontshare/Google Fonts and fall back to the platform's system faces offline; the phone viewer deliberately fetches no web fonts, since the church network often has no internet.
 
 ## Configuration

@@ -36,6 +36,26 @@ module.exports = {
         success: '#22C55E',
         warning: '#F59E0B',
         error: '#EF4444',
+        /**
+         * Operator UI surface tokens. These resolve through CSS custom
+         * properties so the control panel can swap between the light and dark
+         * themes with a single `data-ui-theme` attribute — see global.css.
+         * Note that `/opacity` modifiers do not work on var()-backed colours;
+         * use a token that already carries the right alpha.
+         */
+        ui: {
+          bg: 'var(--ui-bg)',
+          surface: 'var(--ui-surface)',
+          card: 'var(--ui-card)',
+          border: 'var(--ui-border)',
+          'border-strong': 'var(--ui-border-strong)',
+          text: 'var(--ui-text)',
+          muted: 'var(--ui-muted)',
+          faint: 'var(--ui-faint)',
+          accent: 'var(--ui-accent)',
+          hover: 'var(--ui-hover)',
+          live: 'var(--ui-live)',
+        },
       },
       borderRadius: {
         sm: '4px',

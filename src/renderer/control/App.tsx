@@ -39,13 +39,70 @@ const STATUS_PRESENTATION: Record<
   'idle' | 'recording' | 'paused',
   { label: string; color: string; pulse: boolean }
 > = {
-  idle: { label: 'Standby', color: 'var(--dark-faint)', pulse: false },
+  idle: { label: 'Standby', color: 'var(--ui-faint)', pulse: false },
   recording: { label: 'Live', color: 'var(--success)', pulse: true },
   paused: { label: 'Paused', color: 'var(--warning)', pulse: false },
 };
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return <h3 className="eyebrow mb-3">{children}</h3>;
+}
+
+// ─── Operator UI theme ──────────────────────────────────────────────────────
+
+type UiTheme = 'light' | 'dark';
+
+const UI_THEME_STORAGE_KEY = 'captionbuddy-ui-theme';
+
+/**
+ * The design system prescribes the dark palette for the operator view, so that
+ * is the default — but the panel also gets used in daylit rooms and at
+ * rehearsal, so the operator can switch and the choice sticks per machine.
+ */
+function readStoredTheme(): UiTheme {
+  try {
+    const saved = localStorage.getItem(UI_THEME_STORAGE_KEY);
+    if (saved === 'light' || saved === 'dark') return saved;
+  } catch {
+    /* private mode / storage disabled */
+  }
+  return 'dark';
+}
+
+/** Outlined icons, consistent 1.5 stroke — the system's iconography rule. */
+function ThemeToggle({ theme, onToggle }: { theme: UiTheme; onToggle: () => void }) {
+  const goingTo = theme === 'dark' ? 'light' : 'dark';
+  return (
+    <button
+      className="btn btn-ghost btn-icon"
+      onClick={onToggle}
+      title={`Switch to ${goingTo} mode`}
+      aria-label={`Switch to ${goingTo} mode`}
+    >
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        {theme === 'dark' ? (
+          // Currently dark → offer the sun
+          <>
+            <circle cx="12" cy="12" r="4" />
+            <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+          </>
+        ) : (
+          // Currently light → offer the moon
+          <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+        )}
+      </svg>
+    </button>
+  );
 }
 
 function FormattedSegment({ text, className }: { text: string; className?: string }) {
@@ -60,7 +117,7 @@ function FormattedSegment({ text, className }: { text: string; className?: strin
     <div className={className}>
       {parts.map((part, i) =>
         part.isReference ? (
-          <p key={i} className="font-semibold my-2 text-capb-light">{part.text}</p>
+          <p key={i} className="font-semibold my-2 text-ui-accent">{part.text}</p>
         ) : (
           <p key={i}>{part.text}</p>
         )
@@ -135,9 +192,9 @@ function EditableSegment({
           }}
           rows={1}
           aria-label="Edit transcript line"
-          className="input input-dark resize-none leading-relaxed"
+          className="input resize-none leading-relaxed"
         />
-        <p className="input-hint input-hint-dark font-mono">
+        <p className="input-hint font-mono">
           Enter to save · Shift+Enter for new line · Esc to cancel
         </p>
       </div>
@@ -159,12 +216,12 @@ function EditableSegment({
       /* The line currently on the screens carries a CapB Violet edge, the same
          way PresenterBuddy's confidence monitor marks the live slide. */
       className={`group relative cursor-text rounded-md px-4 py-1 -mx-1 border-l-2 transition-colors ${
-        isLive ? 'border-capb bg-white/[0.03]' : 'border-transparent'
-      } hover:bg-white/[0.06]`}
+        isLive ? 'border-capb bg-ui-live' : 'border-transparent'
+      } hover:bg-ui-hover`}
     >
       <FormattedSegment text={segment.text} className={className} />
       {segment.editedAt !== undefined && (
-        <span className="absolute top-1 right-1 font-mono text-mono-sm uppercase tracking-widest text-white/30 opacity-0 group-hover:opacity-100">
+        <span className="absolute top-1 right-1 font-mono text-mono-sm uppercase tracking-widest text-ui-faint opacity-0 group-hover:opacity-100">
           edited
         </span>
       )}
@@ -253,18 +310,18 @@ function SettingsModal({
       onClick={onClose}
     >
       <div
-        className="card-dark w-full max-w-2xl max-h-[80vh] overflow-y-auto !p-0 shadow-hover"
+        className="card w-full max-w-2xl max-h-[80vh] overflow-y-auto !p-0 shadow-hover"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal header */}
-        <div className="flex items-center justify-between px-md py-sm border-b border-white/[0.08] sticky top-0 bg-dark-mid z-10">
+        <div className="flex items-center justify-between px-md py-sm border-b border-ui-border sticky top-0 bg-ui-surface z-10">
           <h2 id="settings-title" className="section-title text-heading text-white">
             Settings
           </h2>
           <button
             onClick={onClose}
             aria-label="Close settings"
-            className="btn btn-ghost-dark btn-sm !px-2"
+            className="btn btn-ghost btn-sm !px-2"
           >
             ✕
           </button>
@@ -275,16 +332,16 @@ function SettingsModal({
           <section>
             <SectionHeading>Audio Input</SectionHeading>
             {status !== 'idle' && (
-              <p className="callout callout-dark-warning mb-3" role="status">
+              <p className="callout callout-warning mb-3" role="status">
                 Stop the session to change device.
               </p>
             )}
-            <label htmlFor="audio-device" className="input-label input-label-dark">
+            <label htmlFor="audio-device" className="input-label">
               Device
             </label>
             <select
               id="audio-device"
-              className="input input-dark"
+              className="input"
               value={selectedDevice}
               disabled={status !== 'idle'}
               onChange={(e) => {
@@ -301,10 +358,10 @@ function SettingsModal({
               ))}
             </select>
             <div className="mt-md">
-              <span className="input-label input-label-dark">Input level</span>
+              <span className="input-label">Input level</span>
               <div className="flex items-center gap-xs">
                 <div
-                  className="flex-1 h-2 bg-white/10 rounded-sm overflow-hidden"
+                  className="flex-1 h-2 bg-ui-border-strong rounded-sm overflow-hidden"
                   role="meter"
                   aria-label="Audio input level"
                   aria-valuenow={Math.round(Math.min(100, audioLevel * 500))}
@@ -328,7 +385,7 @@ function SettingsModal({
                 </div>
                 {status === 'idle' && (
                   <button
-                    className={`btn btn-sm ${audioTesting ? 'btn-danger' : 'btn-ghost-dark'}`}
+                    className={`btn btn-sm ${audioTesting ? 'btn-danger' : 'btn-ghost'}`}
                     onClick={async () => {
                       if (audioTesting) {
                         await window.autoscribe.stopAudioTest();
@@ -349,8 +406,8 @@ function SettingsModal({
           {/* Pacing */}
           <section>
             <SectionHeading>Pacing</SectionHeading>
-            <label htmlFor="pacing-wpm" className="input-label input-label-dark">
-              Speed <span className="font-mono text-mono-md text-capb-light">{wpm} WPM</span>
+            <label htmlFor="pacing-wpm" className="input-label">
+              Speed <span className="font-mono text-mono-md text-ui-accent">{wpm} WPM</span>
             </label>
             <input
               id="pacing-wpm"
@@ -368,7 +425,7 @@ function SettingsModal({
               }}
               className="w-full accent-capb"
             />
-            <div className="flex justify-between font-mono text-mono-sm text-white/30">
+            <div className="flex justify-between font-mono text-mono-sm text-ui-faint">
               <span>SLOWER · 150</span>
               <span>FASTER · 300</span>
             </div>
@@ -379,10 +436,10 @@ function SettingsModal({
             <SectionHeading>Caption Output</SectionHeading>
             <div className="grid grid-cols-2 gap-sm">
               <div>
-                <label htmlFor="display-font" className="input-label input-label-dark">Font</label>
+                <label htmlFor="display-font" className="input-label">Font</label>
                 <select
                   id="display-font"
-                  className="input input-dark"
+                  className="input"
                   value={fontFamily}
                   onChange={(e) => {
                     setFontFamily(e.target.value);
@@ -398,8 +455,8 @@ function SettingsModal({
                 </select>
               </div>
               <div>
-                <label htmlFor="display-size" className="input-label input-label-dark">
-                  Size <span className="font-mono text-mono-md text-capb-light">{fontSize}px</span>
+                <label htmlFor="display-size" className="input-label">
+                  Size <span className="font-mono text-mono-md text-ui-accent">{fontSize}px</span>
                 </label>
                 <input
                   id="display-size"
@@ -412,11 +469,11 @@ function SettingsModal({
                     setFontSize(size);
                     sendDisplaySettings({ fontSize: size });
                   }}
-                  className="input input-dark"
+                  className="input"
                 />
               </div>
             </div>
-            <span className="input-label input-label-dark mt-md">Theme</span>
+            <span className="input-label mt-md">Theme</span>
             <div className="flex gap-xs">
               {(Object.keys(DISPLAY_THEMES) as DisplayThemeKey[]).map((key) => {
                 const theme = DISPLAY_THEMES[key];
@@ -424,7 +481,7 @@ function SettingsModal({
                   <button
                     key={key}
                     aria-pressed={displayTheme === key}
-                    className={`seg seg-dark flex-1 ${displayTheme === key ? 'seg-active' : ''}`}
+                    className={`seg flex-1 ${displayTheme === key ? 'seg-active' : ''}`}
                     onClick={() => {
                       setDisplayTheme(key);
                       sendDisplaySettings({
@@ -439,7 +496,7 @@ function SettingsModal({
                 );
               })}
             </div>
-            <p className="input-hint input-hint-dark">
+            <p className="input-hint">
               Broadcast convention is white on pure black — the congregation sees only the words.
             </p>
           </section>
@@ -454,9 +511,9 @@ function SettingsModal({
               return (
                 <div key={role} className="mb-md">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="input-label input-label-dark !mb-0">{label}</span>
+                    <span className="input-label !mb-0">{label}</span>
                     <button
-                      className={`btn btn-sm ${isOpen ? 'btn-ghost-dark' : 'btn-capb'}`}
+                      className={`btn btn-sm ${isOpen ? 'btn-ghost' : 'btn-capb'}`}
                       onClick={() => {
                         if (role === 'primary') {
                           isOpen ? window.autoscribe.closeDisplay() : window.autoscribe.openDisplay();
@@ -470,7 +527,7 @@ function SettingsModal({
                   </div>
                   <select
                     aria-label={`Screen for ${label}`}
-                    className="input input-dark"
+                    className="input"
                     disabled={!isOpen || screens.length === 0}
                     value={currentScreen ?? ''}
                     onChange={(e) => {
@@ -500,7 +557,7 @@ function SettingsModal({
                 checked={translation.enabled}
                 onChange={(e) => updateTranslation({ enabled: e.target.checked })}
               />
-              <span className="text-body-sm text-white/75">Enable Spanish translation</span>
+              <span className="text-body-sm text-ui-text">Enable Spanish translation</span>
             </label>
             {translation.enabled && (
               <div className="space-y-md pl-md">
@@ -510,13 +567,13 @@ function SettingsModal({
                   ['viewerDefaultLanguage', 'Phones default to'],
                 ] as const).map(([key, label]) => (
                   <div key={key}>
-                    <span className="input-label input-label-dark">{label}</span>
+                    <span className="input-label">{label}</span>
                     <div className="flex gap-xs" role="group" aria-label={label}>
                       {(['english', 'spanish', 'both'] as const).map((mode) => (
                         <button
                           key={mode}
                           aria-pressed={translation[key] === mode}
-                          className={`seg seg-dark flex-1 ${translation[key] === mode ? 'seg-active' : ''}`}
+                          className={`seg flex-1 ${translation[key] === mode ? 'seg-active' : ''}`}
                           onClick={() => updateTranslation({ [key]: mode })}
                         >
                           {LANGUAGE_LABELS[mode]}
@@ -533,7 +590,7 @@ function SettingsModal({
           <section className="pb-sm">
             <SectionHeading>Network Viewers</SectionHeading>
             <button
-              className={`btn ${networkStatus?.running ? 'btn-ghost-dark' : 'btn-capb'}`}
+              className={`btn ${networkStatus?.running ? 'btn-ghost' : 'btn-capb'}`}
               onClick={toggleNetwork}
             >
               {networkStatus?.running ? 'Stop server' : 'Start server'}
@@ -542,7 +599,7 @@ function SettingsModal({
               <div className="mt-md space-y-xs">
                 <p className="flex items-center gap-xs">
                   <span className="eyebrow-muted">URL</span>
-                  <span className="font-mono text-mono-md text-capb-light">{networkStatus.url}</span>
+                  <span className="font-mono text-mono-md text-ui-accent">{networkStatus.url}</span>
                 </p>
                 <p className="flex items-center gap-xs">
                   <span className="eyebrow-muted">Viewers</span>
@@ -595,9 +652,25 @@ export function ControlApp() {
     secondaryScreenId: null,
   });
   const [showSettings, setShowSettings] = useState(false);
+  const [uiTheme, setUiTheme] = useState<UiTheme>(readStoredTheme);
 
   const transcriptEndRef = useRef<HTMLDivElement>(null);
   const spanishEndRef = useRef<HTMLDivElement>(null);
+
+  // Applied to <html> rather than the app root so the browser paints the page
+  // background in the right theme before React mounts anything.
+  useEffect(() => {
+    document.documentElement.setAttribute('data-ui-theme', uiTheme);
+    try {
+      localStorage.setItem(UI_THEME_STORAGE_KEY, uiTheme);
+    } catch {
+      /* private mode / storage disabled */
+    }
+  }, [uiTheme]);
+
+  const toggleTheme = useCallback(() => {
+    setUiTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  }, []);
 
   // Splash screen timer
   useEffect(() => {
@@ -754,7 +827,7 @@ export function ControlApp() {
   if (splash) {
     return (
       <div
-        className={`h-screen bg-bg flex items-center justify-center transition-opacity duration-300 ${
+        className={`h-screen bg-ui-bg flex items-center justify-center transition-opacity duration-300 ${
           splashFading ? 'opacity-0' : 'opacity-100'
         }`}
       >
@@ -769,15 +842,15 @@ export function ControlApp() {
   return (
     /* Operator / confidence view — dark UI palette, per the CaptionBuddy
        desktop patterns in the design system. */
-    <div className="h-screen bg-dark text-white flex flex-col">
+    <div className="h-screen bg-ui-bg text-ui-text flex flex-col">
       {/* ─── Header ─────────────────────────────────────────── */}
-      <header className="flex items-center justify-between px-lg h-[60px] shrink-0 border-b border-white/[0.08]">
+      <header className="flex items-center justify-between px-lg h-[60px] shrink-0 border-b border-ui-border">
         <div className="flex items-center gap-md">
           <div className="w-7 h-7 bg-capb rounded-md flex items-center justify-center shrink-0">
             <span className="text-white font-bold text-body-sm leading-none">C</span>
           </div>
           <div>
-            <h1 className="font-bold text-[15px] leading-tight text-white">CaptionBuddy</h1>
+            <h1 className="font-bold text-[15px] leading-tight text-ui-text">CaptionBuddy</h1>
             <p className="eyebrow-muted !text-[10px]">Live Caption &amp; Translation</p>
           </div>
         </div>
@@ -794,20 +867,22 @@ export function ControlApp() {
 
           {/* Network badge */}
           {networkStatus?.running && (
-            <span className="badge badge-dark">
+            <span className="badge badge-neutral">
               <span className="badge-dot" style={{ backgroundColor: 'var(--success)' }} />
               {networkStatus.url.replace('http://', '')}
             </span>
           )}
 
-          <button className="btn btn-ghost-dark btn-sm" onClick={() => setShowSettings(true)}>
+          <ThemeToggle theme={uiTheme} onToggle={toggleTheme} />
+
+          <button className="btn btn-ghost btn-sm" onClick={() => setShowSettings(true)}>
             Settings
           </button>
         </div>
       </header>
 
       {/* ─── Toolbar ────────────────────────────────────────── */}
-      <div className="flex items-center justify-between gap-sm px-lg py-md shrink-0 border-b border-white/[0.08] bg-dark-mid">
+      <div className="flex items-center justify-between gap-sm px-lg py-md shrink-0 border-b border-ui-border bg-ui-surface">
         <div className="flex items-center gap-xs">
           {status === 'idle' ? (
             <button className="btn btn-capb" onClick={startSession}>
@@ -829,13 +904,13 @@ export function ControlApp() {
           {/* Save Transcript */}
           {status === 'idle' && segments.length > 0 ? (
             <>
-              <button className="btn btn-ghost-dark" onClick={handleExport}>Save Transcript</button>
-              <button className="btn btn-ghost-dark !border-transparent" onClick={handleDiscard}>
+              <button className="btn btn-ghost" onClick={handleExport}>Save Transcript</button>
+              <button className="btn btn-ghost !border-transparent" onClick={handleDiscard}>
                 Discard
               </button>
             </>
           ) : (
-            <button className="btn btn-ghost-dark" disabled>Save Transcript</button>
+            <button className="btn btn-ghost" disabled>Save Transcript</button>
           )}
         </div>
 
@@ -844,22 +919,22 @@ export function ControlApp() {
         <div className="flex items-center gap-md shrink-0">
           <div className="flex items-center gap-2">
             <span className="eyebrow-muted">Source</span>
-            <span className="seg seg-dark seg-active cursor-default">EN</span>
+            <span className="seg seg-active cursor-default">EN</span>
           </div>
-          <span aria-hidden="true" className="text-white/25">→</span>
+          <span aria-hidden="true" className="text-ui-faint">→</span>
           <div className="flex items-center gap-2">
             <span className="eyebrow-muted">Target</span>
             <div className="flex gap-1" role="group" aria-label="Target language">
               <button
                 aria-pressed={translation.enabled}
-                className={`seg seg-dark ${translation.enabled ? 'seg-active' : ''}`}
+                className={`seg ${translation.enabled ? 'seg-active' : ''}`}
                 onClick={() => updateTranslation({ enabled: true })}
               >
                 ES
               </button>
               <button
                 aria-pressed={!translation.enabled}
-                className={`seg seg-dark ${!translation.enabled ? 'seg-active' : ''}`}
+                className={`seg ${!translation.enabled ? 'seg-active' : ''}`}
                 onClick={() => updateTranslation({ enabled: false })}
               >
                 OFF
@@ -897,12 +972,12 @@ export function ControlApp() {
         <div
           key={i}
           role="alert"
-          className="callout callout-dark-error mx-lg mt-md flex items-center justify-between gap-sm shrink-0"
+          className="callout callout-error mx-lg mt-md flex items-center justify-between gap-sm shrink-0"
         >
           <span>{msg}</span>
           <button
             aria-label="Dismiss error"
-            className="text-white/60 hover:text-white shrink-0"
+            className="text-ui-muted hover:text-ui-text shrink-0"
             onClick={() => setAppErrors((prev) => prev.filter((_, idx) => idx !== i))}
           >
             ✕
@@ -913,17 +988,17 @@ export function ControlApp() {
       {/* ─── Split Transcript Panes ─────────────────────────── */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left: source transcript */}
-        <div className="flex-1 flex flex-col min-w-0 border-r border-white/[0.08]">
-          <div className="px-lg py-2 border-b border-white/[0.08] shrink-0">
+        <div className="flex-1 flex flex-col min-w-0 border-r border-ui-border">
+          <div className="px-lg py-2 border-b border-ui-border shrink-0">
             <h2 className="eyebrow-muted">
-              Source <span className="text-white/70">· EN</span>
+              Source <span className="text-ui-muted">· EN</span>
             </h2>
           </div>
           <div className="flex-1 overflow-y-auto px-lg py-md">
             {segments.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center gap-2">
-                <p className="section-title text-title text-white/80">Ready when you are</p>
-                <p className="font-mono text-mono-sm uppercase tracking-widest text-white/30">
+                <p className="section-title text-title text-ui-text">Ready when you are</p>
+                <p className="font-mono text-mono-sm uppercase tracking-widest text-ui-faint">
                   Press Start Captioning to begin
                 </p>
               </div>
@@ -933,7 +1008,7 @@ export function ControlApp() {
                   key={seg.id}
                   segment={seg}
                   isLive={seg.id === liveSegmentId}
-                  className="text-white/90 leading-relaxed text-body"
+                  className="text-ui-text leading-relaxed text-body"
                   onCommit={handleSegmentEdit}
                 />
               ))
@@ -943,23 +1018,23 @@ export function ControlApp() {
         </div>
 
         {/* Right: target translation */}
-        <div className="flex-1 flex flex-col min-w-0 bg-dark-mid">
-          <div className="px-lg py-2 border-b border-white/[0.08] shrink-0">
+        <div className="flex-1 flex flex-col min-w-0 bg-ui-surface">
+          <div className="px-lg py-2 border-b border-ui-border shrink-0">
             <h2 className="eyebrow">
-              Target <span className="text-capb-light">· ES</span>
+              Target <span className="text-ui-accent">· ES</span>
             </h2>
           </div>
           <div className="flex-1 overflow-y-auto px-lg py-md">
             {!translation.enabled ? (
               <div className="flex flex-col items-center justify-center h-full text-center gap-2">
-                <p className="section-title text-heading text-white/60">Translation is off</p>
-                <p className="font-mono text-mono-sm uppercase tracking-widest text-white/30">
+                <p className="section-title text-heading text-ui-muted">Translation is off</p>
+                <p className="font-mono text-mono-sm uppercase tracking-widest text-ui-faint">
                   Switch target to ES to turn it on
                 </p>
               </div>
             ) : segments.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center">
-                <p className="font-mono text-mono-sm uppercase tracking-widest text-white/30">
+                <p className="font-mono text-mono-sm uppercase tracking-widest text-ui-faint">
                   Translations appear here
                 </p>
               </div>
@@ -968,14 +1043,14 @@ export function ControlApp() {
                 <div
                   key={seg.id}
                   className={`px-4 py-1 -mx-1 border-l-2 ${
-                    seg.id === liveSegmentId ? 'border-capb bg-white/[0.03]' : 'border-transparent'
+                    seg.id === liveSegmentId ? 'border-capb bg-ui-live' : 'border-transparent'
                   }`}
                 >
-                  <p className="text-white/90 leading-relaxed text-body">
+                  <p className="text-ui-text leading-relaxed text-body">
                     {seg.translation || (
                       /* Not-yet-certain text renders muted and italic so the
                          operator can spot it at a glance. */
-                      <span className="italic text-white/35">Translating…</span>
+                      <span className="italic text-ui-faint">Translating…</span>
                     )}
                   </p>
                 </div>

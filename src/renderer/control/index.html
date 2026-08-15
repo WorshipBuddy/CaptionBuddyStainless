@@ -8,6 +8,20 @@
     <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=satoshi@300,400,500,600,700&display=swap" />
     <title>CaptionBuddy</title>
+    <script>
+      // Paint the operator's saved theme before first paint, so switching to
+      // light mode does not flash the dark palette on every launch.
+      (function () {
+        var theme = 'dark';
+        try {
+          var saved = localStorage.getItem('captionbuddy-ui-theme');
+          if (saved === 'light' || saved === 'dark') theme = saved;
+        } catch (e) {
+          /* private mode / storage disabled */
+        }
+        document.documentElement.setAttribute('data-ui-theme', theme);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
