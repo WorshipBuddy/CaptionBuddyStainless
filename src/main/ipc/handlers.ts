@@ -1,5 +1,6 @@
-import { ipcMain, dialog } from 'electron';
+import { ipcMain, dialog, shell, app } from 'electron';
 import { writeFile } from 'fs/promises';
+import path from 'path';
 import { v4 as uuid } from 'uuid';
 import { IPC_CHANNELS, SessionStatus, PacedSegment, AppStatusEvent, SegmentUpdate, SegmentTranslation } from '../../shared/types/ipc';
 import { DEFAULT_SETTINGS, AudioSettings, PacingSettings, AppSettings, TranslationSettings } from '../../shared/types/settings';
@@ -9,6 +10,7 @@ import { WhisperEngine, WhisperTask } from '../stt/WhisperEngine';
 import { STTResult } from '../stt/STTEngine';
 import { PacingController } from '../transcript/PacingController';
 import { TranscriptBuffer } from '../transcript/TranscriptBuffer';
+import { AudioSegmentStore } from '../transcript/AudioSegmentStore';
 import { NetworkServer } from '../server/NetworkServer';
 import { TranslationEngine, TranslationResult } from '../translation/TranslationEngine';
 import {
@@ -28,6 +30,7 @@ const pacingController = new PacingController();
 const transcriptBuffer = new TranscriptBuffer();
 const networkServer = new NetworkServer();
 const translationEngine = new TranslationEngine();
+const audioSegmentStore = new AudioSegmentStore();
 
 let sessionStatus: SessionStatus = 'idle';
 let currentAudioSettings: AudioSettings = { ...DEFAULT_SETTINGS.audio };
@@ -108,6 +111,13 @@ sttEngine.on('result', (result: STTResult) => {
 
   // Store in buffer
   transcriptBuffer.add(segment);
+
+  // Save audio segment to disk (fire-and-forget, don't block the transcript)
+  if (result.audio) {
+    audioSegmentStore.saveSegment(segment.id, result.audio, segment.text).catch((err) => {
+      console.error('[AudioSegmentStore] Failed to save segment:', err);
+    });
+  }
 
   // Control window always gets text immediately (operator view)
   const control = getControlWindow();
@@ -234,6 +244,11 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.TRANSCRIPT_UPDATE, async (_event, update: SegmentUpdate) => {
     const text = update.text.trim();
     transcriptBuffer.update(update.id, text);
+
+    // Keep the audio segment manifest in sync with corrections
+    audioSegmentStore.updateText(update.id, text).catch((err) => {
+      console.error('[AudioSegmentStore] Failed to update text:', err);
+    });
 
     // If the segment is still queued, correcting it in place is enough — it
     // will be emitted with the new text when its turn comes.
@@ -370,6 +385,10 @@ export function registerIpcHandlers(): void {
     pacingController.clear();
     sttEngine.reset();
 
+    // Start a new audio segment session for this recording
+    const sessionId = `session-${Date.now()}`;
+    await audioSegmentStore.startSession(sessionId);
+
     audioCapture.start(currentAudioSettings);
     sessionStatus = 'recording';
 
@@ -408,6 +427,9 @@ export function registerIpcHandlers(): void {
     if (sttReady) {
       await sttEngine.flush();
     }
+
+    // End the audio segment session (flushes manifest to disk)
+    await audioSegmentStore.endSession();
 
     // Clear network viewers
     if (networkServer.isRunning) {
@@ -480,5 +502,37 @@ export function registerIpcHandlers(): void {
       return filePath;
     }
     return null;
+  });
+
+  // Audio segment store (audio <-> transcript mapping)
+  ipcMain.handle(IPC_CHANNELS.AUDIO_SEGMENTS_LIST_SESSIONS, async () => {
+    return AudioSegmentStore.listSessions();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.AUDIO_SEGMENTS_GET_MANIFEST, async (_event, sessionId?: string) => {
+    // If no sessionId provided, return the current session's manifest
+    if (!sessionId) {
+      return audioSegmentStore.getManifest();
+    }
+    return AudioSegmentStore.loadSession(sessionId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.AUDIO_SEGMENTS_GET_AUDIO_PATH, async (_event, segmentId: string) => {
+    return audioSegmentStore.getAudioPath(segmentId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.AUDIO_SEGMENTS_DELETE_SESSION, async (_event, sessionId: string) => {
+    await AudioSegmentStore.deleteSession(sessionId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.AUDIO_SEGMENTS_OPEN_FOLDER, async () => {
+    const sessionDir = audioSegmentStore.getSessionDir();
+    if (sessionDir) {
+      await shell.openPath(sessionDir);
+    } else {
+      // No active session — open the parent audio-segments directory
+      const baseDir = path.join(app.getPath('userData'), 'audio-segments');
+      await shell.openPath(baseDir);
+    }
   });
 }

@@ -4,6 +4,8 @@ export interface STTResult {
   text: string;
   isFinal: boolean;
   confidence: number;
+  /** Raw Float32 PCM audio that produced this result (16kHz mono). */
+  audio?: Float32Array;
 }
 
 /**

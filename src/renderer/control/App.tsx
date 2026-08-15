@@ -195,7 +195,6 @@ export function ControlApp() {
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [networkStatus, setNetworkStatus] = useState<NetworkStatus | null>(null);
   const [qrCode, setQrCode] = useState<string | null>(null);
-  const [showExportPrompt, setShowExportPrompt] = useState(false);
   const [appErrors, setAppErrors] = useState<string[]>([]);
   const [modelProgress, setModelProgress] = useState<number | null>(null);
   const [sttLanguage, setSTTLanguage] = useState('en');
@@ -378,19 +377,16 @@ export function ControlApp() {
     await window.autoscribe.stopSession();
     setStatus('idle');
     setAudioLevel(0);
-    if (segments.length > 0) {
-      setShowExportPrompt(true);
-    }
-  }, [segments.length]);
+    // Don't prompt immediately — let the operator review/edit the transcript.
+    // Export and Discard buttons appear inline above the transcript.
+  }, []);
 
   const handleExport = useCallback(async () => {
     await window.autoscribe.exportTranscript();
-    setShowExportPrompt(false);
     setSegments([]);
   }, []);
 
-  const handleDismissExport = useCallback(() => {
-    setShowExportPrompt(false);
+  const handleDiscard = useCallback(() => {
     setSegments([]);
   }, []);
 
@@ -448,6 +444,14 @@ export function ControlApp() {
           >
             Open Display
           </button>
+          <button
+            aria-label="Open recordings folder"
+            className={`text-xs px-3 py-1.5 rounded border ${t.border} ${t.textMuted} hover:opacity-80`}
+            onClick={() => window.autoscribe.openRecordingsFolder()}
+            title="Open saved audio recordings folder"
+          >
+            📂 Recordings
+          </button>
           <div className="flex items-center gap-2">
             <div className={`w-2.5 h-2.5 rounded-full ${
               status === 'recording' ? 'bg-red-500 animate-pulse' :
@@ -488,32 +492,6 @@ export function ControlApp() {
           </button>
         </div>
       ))}
-
-      {/* Export prompt overlay */}
-      {showExportPrompt && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className={`${t.sidebar} rounded-lg shadow-xl p-6 max-w-sm mx-4 border ${t.border}`}>
-            <h3 className={`text-lg font-semibold ${t.text} mb-2`}>Session Ended</h3>
-            <p className={`text-sm ${t.textMuted} mb-4`}>
-              Would you like to export the transcript from this session?
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button
-                className={`px-4 py-2 text-sm ${t.textMuted} rounded border ${t.border} hover:opacity-80`}
-                onClick={handleDismissExport}
-              >
-                Discard
-              </button>
-              <button
-                className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded font-medium"
-                onClick={handleExport}
-              >
-                Export
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Two-column layout */}
       <div className="flex flex-1 overflow-hidden">
@@ -936,13 +914,31 @@ export function ControlApp() {
         <div className={`flex-1 flex flex-col ${t.sidebar}`}>
           <div className={`px-6 py-2 border-b ${t.border} flex items-center justify-between`}>
             <h2 className={`text-xs font-semibold ${t.textFaint} uppercase tracking-wide`}>Live Transcript</h2>
-            <button
-              className="text-xs text-blue-400 hover:text-blue-300 font-medium disabled:opacity-50"
-              disabled={segments.length === 0}
-              onClick={() => window.autoscribe.exportTranscript()}
-            >
-              Export
-            </button>
+            {status === 'idle' && segments.length > 0 && (
+              <div className="flex items-center gap-2">
+                <button
+                  className="text-xs px-3 py-1 text-white bg-blue-600 hover:bg-blue-700 rounded font-medium"
+                  onClick={handleExport}
+                >
+                  Export
+                </button>
+                <button
+                  className={`text-xs px-3 py-1 rounded border ${t.border} ${t.textMuted} hover:opacity-80 font-medium`}
+                  onClick={handleDiscard}
+                >
+                  Discard
+                </button>
+              </div>
+            )}
+            {(status !== 'idle' || segments.length === 0) && (
+              <button
+                className="text-xs text-blue-400 hover:text-blue-300 font-medium disabled:opacity-50"
+                disabled={segments.length === 0}
+                onClick={() => window.autoscribe.exportTranscript()}
+              >
+                Export
+              </button>
+            )}
           </div>
           <div className="flex-1 overflow-y-auto p-6">
             {segments.length === 0 ? (

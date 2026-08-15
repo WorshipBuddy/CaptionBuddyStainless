@@ -58,6 +58,13 @@ export const IPC_CHANNELS = {
 
   // App status / errors pushed from main → control window
   APP_STATUS: 'app:status',
+
+  // Audio segment store (audio-to-transcript mapping)
+  AUDIO_SEGMENTS_LIST_SESSIONS: 'audio-segments:list-sessions',
+  AUDIO_SEGMENTS_GET_MANIFEST: 'audio-segments:get-manifest',
+  AUDIO_SEGMENTS_GET_AUDIO_PATH: 'audio-segments:get-audio-path',
+  AUDIO_SEGMENTS_DELETE_SESSION: 'audio-segments:delete-session',
+  AUDIO_SEGMENTS_OPEN_FOLDER: 'audio-segments:open-folder',
 } as const;
 
 export interface AppStatusEvent {

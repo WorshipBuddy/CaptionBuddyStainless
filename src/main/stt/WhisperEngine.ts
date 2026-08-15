@@ -191,6 +191,7 @@ export class WhisperEngine extends STTEngine {
           text,
           isFinal: true,
           confidence: 0.85,
+          audio: merged,
         };
         this.emit('result', sttResult);
       }

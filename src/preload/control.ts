@@ -81,6 +81,10 @@ const controlAPI = {
   getNetworkQR: (): Promise<string> =>
     ipcRenderer.invoke(IPC_CHANNELS.NETWORK_QR),
 
+  // Audio segments
+  openRecordingsFolder: (): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.AUDIO_SEGMENTS_OPEN_FOLDER),
+
   // Event listeners
   onTranscriptSegment: (callback: (segment: TranscriptSegment) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, segment: TranscriptSegment) => callback(segment);
