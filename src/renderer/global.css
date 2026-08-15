@@ -290,6 +290,23 @@
     line-height: 1.1;
   }
 
+  /* Page-entrance motion: the system's 'long' duration (400–600ms) and enter
+     easing — fast start, soft settle. The prefers-reduced-motion block at the
+     end of this file neutralises it. */
+  .motion-enter {
+    animation: ui-enter 550ms cubic-bezier(0.21, 0.47, 0.32, 0.98) both;
+  }
+  @keyframes ui-enter {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
   /* ── Badges ──────────────────────────────────────────────────────────── */
   .badge {
     display: inline-flex;

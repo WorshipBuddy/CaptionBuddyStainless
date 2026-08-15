@@ -32,7 +32,7 @@ function createControlWindow(): void {
   controlWindow = new BrowserWindow({
     width: 900,
     height: 700,
-    title: 'AutoScribe - Control Panel',
+    title: 'CaptionBuddy — Control Panel',
     webPreferences: {
       preload: CONTROL_WINDOW_PRELOAD_WEBPACK_ENTRY,
       contextIsolation: true,
@@ -83,7 +83,7 @@ export function createDisplayWindow(role: DisplayRole = 'primary', screenId?: nu
     // Place the window on the requested monitor at creation time, so it never
     // flashes on the operator's screen before being moved.
     ...(target ? { x: target.bounds.x + 40, y: target.bounds.y + 40 } : {}),
-    title: role === 'primary' ? 'AutoScribe - Display' : 'AutoScribe - Display 2',
+    title: role === 'primary' ? 'CaptionBuddy — Display' : 'CaptionBuddy — Display 2',
     webPreferences: {
       preload: DISPLAY_WINDOW_PRELOAD_WEBPACK_ENTRY,
       contextIsolation: true,

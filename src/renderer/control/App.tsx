@@ -16,7 +16,6 @@ import {
   DisplayThemeKey,
 } from '../../shared/types/settings';
 import { parseBibleReferences } from '../../shared/bibleReferences';
-import logoSrc from '../../assets/logo.png';
 
 declare global {
   interface Window {
@@ -67,6 +66,31 @@ function readStoredTheme(): UiTheme {
     /* private mode / storage disabled */
   }
   return 'dark';
+}
+
+// ─── Brand ──────────────────────────────────────────────────────────────────
+
+/**
+ * CaptionBuddy's real logo art is still a pending deliverable in the design
+ * system ("placeholder slots"), so the mark is built from the system's own
+ * primitives instead: a flat Violet chip, no gradients, radius from --r-*.
+ * Swap this for the real asset once it lands.
+ */
+function BrandMark({ size }: { size: number }) {
+  return (
+    <div
+      className="bg-capb flex items-center justify-center shrink-0"
+      style={{ width: size, height: size, borderRadius: size <= 32 ? 'var(--r-md)' : 'var(--r-xl)' }}
+      aria-hidden="true"
+    >
+      <span
+        className="text-white font-bold leading-none"
+        style={{ fontSize: Math.round(size * 0.5) }}
+      >
+        C
+      </span>
+    </div>
+  );
 }
 
 /** Outlined icons, consistent 1.5 stroke — the system's iconography rule. */
@@ -827,11 +851,21 @@ export function ControlApp() {
   if (splash) {
     return (
       <div
-        className={`h-screen bg-ui-bg flex items-center justify-center transition-opacity duration-300 ${
+        className={`h-screen bg-ui-bg flex flex-col items-center justify-center gap-md transition-opacity duration-300 ${
           splashFading ? 'opacity-0' : 'opacity-100'
         }`}
       >
-        <img src={logoSrc} alt="CaptionBuddy" className="max-w-md w-3/4" />
+        {/* Page-entrance motion: the system's 'long' duration and enter easing. */}
+        <div className="flex flex-col items-center gap-md motion-enter">
+          <BrandMark size={72} />
+          <div className="flex flex-col items-center gap-2">
+            {/* Wordmark is Satoshi 700 — the system never sets it in serif. */}
+            <p className="font-bold text-title tracking-tight text-ui-text leading-none">
+              CaptionBuddy
+            </p>
+            <p className="eyebrow">Live Caption &amp; Translation</p>
+          </div>
+        </div>
       </div>
     );
   }
@@ -846,9 +880,7 @@ export function ControlApp() {
       {/* ─── Header ─────────────────────────────────────────── */}
       <header className="flex items-center justify-between px-lg h-[60px] shrink-0 border-b border-ui-border">
         <div className="flex items-center gap-md">
-          <div className="w-7 h-7 bg-capb rounded-md flex items-center justify-center shrink-0">
-            <span className="text-white font-bold text-body-sm leading-none">C</span>
-          </div>
+          <BrandMark size={28} />
           <div>
             <h1 className="font-bold text-[15px] leading-tight text-ui-text">CaptionBuddy</h1>
             <p className="eyebrow-muted !text-[10px]">Live Caption &amp; Translation</p>

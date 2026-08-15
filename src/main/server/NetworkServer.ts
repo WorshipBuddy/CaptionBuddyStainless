@@ -67,7 +67,7 @@ export class NetworkServer extends EventEmitter {
     // Health check / status endpoint
     this.app.get('/api/status', (_req, res) => {
       res.json({
-        app: 'AutoScribe',
+        app: 'CaptionBuddy',
         clients: this.wss?.clients.size ?? 0,
       });
     });

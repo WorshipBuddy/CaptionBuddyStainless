@@ -242,7 +242,11 @@ Components never hardcode a colour. They read `--ui-*` surface tokens which the 
 
 One rule is worth knowing before you reach for Violet on a dark surface: `#5B3FB0` scores only **2.2:1** on `#162032`, well under AA. Accent *text* on dark therefore uses the light tint `#E5DEF7` (12.5:1) via `--ui-accent`, and full-strength Violet stays where it reads properly — as a fill behind white text. Every `--ui-*` pairing is at AA or better in both themes.
 
-Typefaces are Satoshi (UI and caption text), JetBrains Mono (labels, language codes, status), and Instrument Serif (headings only — never live caption text). The desktop windows load them from Fontshare/Google Fonts and fall back to the platform's system faces offline; the phone viewer deliberately fetches no web fonts, since the church network often has no internet.
+### Brand mark
+
+CaptionBuddy's logo art is still a pending deliverable in the design system, which carries placeholder slots for it. Until it lands, the splash and header both render `BrandMark` — a flat Violet chip built from the system's own primitives, no gradients, radius from the `--r-*` tokens. Swap that one component for the real asset when it arrives and both surfaces follow.
+
+Typefaces are Satoshi (UI and caption text), JetBrains Mono (labels, language codes, status), and Instrument Serif (headings only — never live caption text). The wordmark is Satoshi 700 and is never set in serif. The desktop windows load them from Fontshare/Google Fonts and fall back to the platform's system faces offline; the phone viewer deliberately fetches no web fonts, since the church network often has no internet.
 
 ## Configuration
 
