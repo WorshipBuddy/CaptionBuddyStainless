@@ -22,7 +22,9 @@ function LineBody({ text }: { text: string }) {
     <>
       {parts.map((part, pi) =>
         part.isReference ? (
-          <p key={pi} className="font-bold my-2">{part.text}</p>
+          /* Satoshi 500 rather than 700 — bold weights render heavier on
+             Windows ClearType than on macOS. */
+          <p key={pi} className="font-medium my-2">{part.text}</p>
         ) : (
           <span key={pi}>{part.text}</span>
         )
@@ -153,9 +155,14 @@ export function DisplayApp() {
     emptyLabel: string,
     heading?: string
   ) => (
-    <div className="flex-1 overflow-y-auto p-8 min-w-0" style={containerStyle}>
+    <div className="flex-1 overflow-y-auto p-xl min-w-0" style={containerStyle}>
       {heading && (
-        <div className="sticky top-0 text-xs uppercase tracking-widest opacity-40 pb-2">
+        /* Column label is the only chrome the congregation ever sees, so it is
+           held to a mono eyebrow at the system's smallest size. */
+        <div
+          className="sticky top-0 font-mono uppercase tracking-[0.12em] opacity-40 pb-2"
+          style={{ fontSize: '11px', fontWeight: 500, lineHeight: 1.4 }}
+        >
           {heading}
         </div>
       )}
@@ -183,16 +190,25 @@ export function DisplayApp() {
       style={{ backgroundColor: displaySettings.backgroundColor }}
       onDoubleClick={handleDoubleClick}
     >
-      {/* Minimal top bar - only visible on hover */}
-      <div className="opacity-0 hover:opacity-100 transition-opacity duration-300 absolute top-0 left-0 right-0 z-10 bg-black/20 px-4 py-1 flex justify-between items-center">
-        <span className="text-white/60 text-xs">
-          AutoScribe Display{window.autoscribe.role === 'secondary' ? ' 2' : ''}
+      {/* Caption output carries no chrome — this bar only exists on hover, for
+          the operator, and uses the standard broadcast lower-third scrim. */}
+      <div
+        className="opacity-0 hover:opacity-100 transition-opacity duration-300 absolute top-0 left-0 right-0 z-10 px-sm py-1 flex justify-between items-center font-mono uppercase tracking-[0.12em]"
+        style={{ background: 'rgba(0,0,0,0.6)', fontSize: '11px', fontWeight: 500 }}
+      >
+        <span className="text-white/60">
+          CaptionBuddy Display{window.autoscribe.role === 'secondary' ? ' 2' : ''}
         </span>
-        <span className="text-white/60 text-xs">Double-click for fullscreen</span>
+        <span className="text-white/60">Double-click for fullscreen</span>
       </div>
 
       {languageMode === 'both' ? (
-        <div className="flex-1 flex flex-row min-h-0 divide-x divide-current/10">
+        <div
+          className="flex-1 flex flex-row min-h-0 [&>*+*]:border-l"
+          /* Neutral grey reads as a hairline against both the black caption
+             theme and the light theme, without knowing the text colour. */
+          style={{ borderColor: 'rgba(127,127,127,0.25)' }}
+        >
           {renderColumn(lines, (l) => l.text, bottomRef, 'Waiting for transcription...', 'English')}
           {renderColumn(
             spanishLines,

@@ -12,6 +12,8 @@ import {
   TranslationSettings,
   DEFAULT_SETTINGS,
   LanguageMode,
+  DISPLAY_THEMES,
+  DisplayThemeKey,
 } from '../../shared/types/settings';
 import { parseBibleReferences } from '../../shared/bibleReferences';
 import logoSrc from '../../assets/logo.png';
@@ -23,10 +25,28 @@ declare global {
 }
 
 const LANGUAGE_LABELS: Record<LanguageMode, string> = {
-  english: 'English',
-  spanish: 'Spanish',
-  both: 'Both',
+  english: 'EN',
+  spanish: 'ES',
+  both: 'BOTH',
 };
+
+/**
+ * Status/latency indicator. The design system reuses the semantic states here
+ * rather than inventing colours: Info = listening, Success = live/synced,
+ * Warning = lagging, Error = disconnected.
+ */
+const STATUS_PRESENTATION: Record<
+  'idle' | 'recording' | 'paused',
+  { label: string; color: string; pulse: boolean }
+> = {
+  idle: { label: 'Standby', color: 'var(--dark-faint)', pulse: false },
+  recording: { label: 'Live', color: 'var(--success)', pulse: true },
+  paused: { label: 'Paused', color: 'var(--warning)', pulse: false },
+};
+
+function SectionHeading({ children }: { children: React.ReactNode }) {
+  return <h3 className="eyebrow mb-3">{children}</h3>;
+}
 
 function FormattedSegment({ text, className }: { text: string; className?: string }) {
   const parts = parseBibleReferences(text);
@@ -40,7 +60,7 @@ function FormattedSegment({ text, className }: { text: string; className?: strin
     <div className={className}>
       {parts.map((part, i) =>
         part.isReference ? (
-          <p key={i} className="font-bold my-2">{part.text}</p>
+          <p key={i} className="font-semibold my-2 text-capb-light">{part.text}</p>
         ) : (
           <p key={i}>{part.text}</p>
         )
@@ -52,10 +72,12 @@ function FormattedSegment({ text, className }: { text: string; className?: strin
 function EditableSegment({
   segment,
   className,
+  isLive,
   onCommit,
 }: {
   segment: TranscriptSegment;
   className?: string;
+  isLive: boolean;
   onCommit: (id: string, text: string) => void;
 }) {
   const [isEditing, setIsEditing] = useState(false);
@@ -112,9 +134,10 @@ function EditableSegment({
             }
           }}
           rows={1}
-          className="w-full resize-none rounded border border-gray-300 px-3 py-2 leading-relaxed text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
+          aria-label="Edit transcript line"
+          className="input input-dark resize-none leading-relaxed"
         />
-        <p className="text-xs mt-1 text-gray-400">
+        <p className="input-hint input-hint-dark font-mono">
           Enter to save · Shift+Enter for new line · Esc to cancel
         </p>
       </div>
@@ -133,11 +156,15 @@ function EditableSegment({
           beginEdit();
         }
       }}
-      className="group relative cursor-text rounded px-3 py-1 -mx-3 hover:bg-purple-50 focus:outline-none focus:ring-2 focus:ring-purple-500"
+      /* The line currently on the screens carries a CapB Violet edge, the same
+         way PresenterBuddy's confidence monitor marks the live slide. */
+      className={`group relative cursor-text rounded-md px-4 py-1 -mx-1 border-l-2 transition-colors ${
+        isLive ? 'border-capb bg-white/[0.03]' : 'border-transparent'
+      } hover:bg-white/[0.06]`}
     >
       <FormattedSegment text={segment.text} className={className} />
       {segment.editedAt !== undefined && (
-        <span className="absolute top-1 right-1 text-[10px] uppercase tracking-wide text-gray-400 opacity-0 group-hover:opacity-100">
+        <span className="absolute top-1 right-1 font-mono text-mono-sm uppercase tracking-widest text-white/30 opacity-0 group-hover:opacity-100">
           edited
         </span>
       )}
@@ -189,8 +216,8 @@ function SettingsModal({
   setFontFamily: (f: string) => void;
   fontSize: number;
   setFontSize: (s: number) => void;
-  displayTheme: 'light' | 'dark' | 'high-contrast';
-  setDisplayTheme: (t: 'light' | 'dark' | 'high-contrast') => void;
+  displayTheme: DisplayThemeKey;
+  setDisplayTheme: (t: DisplayThemeKey) => void;
   translation: TranslationSettings;
   updateTranslation: (partial: Partial<TranslationSettings>) => void;
   networkStatus: NetworkStatus | null;
@@ -206,32 +233,58 @@ function SettingsModal({
 }) {
   const wpmDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/30 pt-16">
-      <div className="bg-white rounded-lg shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 backdrop-blur-sm pt-2xl px-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="settings-title"
+      onClick={onClose}
+    >
+      <div
+        className="card-dark w-full max-w-2xl max-h-[80vh] overflow-y-auto !p-0 shadow-hover"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Modal header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 sticky top-0 bg-white z-10">
-          <h2 className="text-lg font-semibold text-gray-900">Settings</h2>
+        <div className="flex items-center justify-between px-md py-sm border-b border-white/[0.08] sticky top-0 bg-dark-mid z-10">
+          <h2 id="settings-title" className="section-title text-heading text-white">
+            Settings
+          </h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+            aria-label="Close settings"
+            className="btn btn-ghost-dark btn-sm !px-2"
           >
             ✕
           </button>
         </div>
 
-        <div className="px-6 py-4 space-y-6">
+        <div className="px-md py-sm space-y-lg">
           {/* Audio */}
           <section>
-            <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">Audio Input</h3>
+            <SectionHeading>Audio Input</SectionHeading>
             {status !== 'idle' && (
-              <p className="text-xs text-amber-600 mb-2">Stop session to change device.</p>
+              <p className="callout callout-dark-warning mb-3" role="status">
+                Stop the session to change device.
+              </p>
             )}
-            <label className="block text-sm text-gray-600 mb-1">Device</label>
+            <label htmlFor="audio-device" className="input-label input-label-dark">
+              Device
+            </label>
             <select
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm text-gray-900 disabled:opacity-50"
+              id="audio-device"
+              className="input input-dark"
               value={selectedDevice}
               disabled={status !== 'idle'}
               onChange={(e) => {
@@ -247,23 +300,35 @@ function SettingsModal({
                 <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
               ))}
             </select>
-            <div className="mt-3">
-              <label className="block text-sm text-gray-600 mb-1">Audio Level</label>
-              <div className="flex items-center gap-2">
-                <div className="flex-1 h-2 bg-gray-200 rounded overflow-hidden">
+            <div className="mt-md">
+              <span className="input-label input-label-dark">Input level</span>
+              <div className="flex items-center gap-xs">
+                <div
+                  className="flex-1 h-2 bg-white/10 rounded-sm overflow-hidden"
+                  role="meter"
+                  aria-label="Audio input level"
+                  aria-valuenow={Math.round(Math.min(100, audioLevel * 500))}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                >
                   <div
                     className="h-full transition-all duration-100"
                     style={{
                       width: `${Math.min(100, audioLevel * 500)}%`,
-                      backgroundColor: audioLevel > 0.15 ? '#ef4444' : audioLevel > 0.05 ? '#eab308' : '#22c55e',
+                      // Semantic states, not decorative colours: hot → Error,
+                      // warm → Warning, healthy → Success.
+                      backgroundColor:
+                        audioLevel > 0.15
+                          ? 'var(--error)'
+                          : audioLevel > 0.05
+                          ? 'var(--warning)'
+                          : 'var(--success)',
                     }}
                   />
                 </div>
                 {status === 'idle' && (
                   <button
-                    className={`text-xs px-3 py-1 rounded font-medium ${
-                      audioTesting ? 'bg-red-500 text-white' : 'bg-blue-500 text-white'
-                    }`}
+                    className={`btn btn-sm ${audioTesting ? 'btn-danger' : 'btn-ghost-dark'}`}
                     onClick={async () => {
                       if (audioTesting) {
                         await window.autoscribe.stopAudioTest();
@@ -274,7 +339,7 @@ function SettingsModal({
                       }
                     }}
                   >
-                    {audioTesting ? 'Stop Test' : 'Test'}
+                    {audioTesting ? 'Stop test' : 'Test'}
                   </button>
                 )}
               </div>
@@ -283,11 +348,12 @@ function SettingsModal({
 
           {/* Pacing */}
           <section>
-            <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">Pacing</h3>
-            <label className="block text-sm text-gray-600 mb-1">
-              Speed: <span className="font-medium">{wpm} WPM</span>
+            <SectionHeading>Pacing</SectionHeading>
+            <label htmlFor="pacing-wpm" className="input-label input-label-dark">
+              Speed <span className="font-mono text-mono-md text-capb-light">{wpm} WPM</span>
             </label>
             <input
+              id="pacing-wpm"
               type="range"
               min={150}
               max={300}
@@ -300,37 +366,43 @@ function SettingsModal({
                   window.autoscribe.updateSettings({ pacing: { mode: 'sentence', wpm: newWpm, sentenceDelay: 500 } });
                 }, 100);
               }}
-              className="w-full"
+              className="w-full accent-capb"
             />
-            <div className="flex justify-between text-xs text-gray-400">
-              <span>Slower (150)</span>
-              <span>Faster (300)</span>
+            <div className="flex justify-between font-mono text-mono-sm text-white/30">
+              <span>SLOWER · 150</span>
+              <span>FASTER · 300</span>
             </div>
           </section>
 
           {/* Display */}
           <section>
-            <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">Display</h3>
-            <div className="grid grid-cols-2 gap-4">
+            <SectionHeading>Caption Output</SectionHeading>
+            <div className="grid grid-cols-2 gap-sm">
               <div>
-                <label className="block text-sm text-gray-600 mb-1">Font</label>
+                <label htmlFor="display-font" className="input-label input-label-dark">Font</label>
                 <select
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm text-gray-900"
+                  id="display-font"
+                  className="input input-dark"
                   value={fontFamily}
                   onChange={(e) => {
                     setFontFamily(e.target.value);
                     sendDisplaySettings({ fontFamily: e.target.value });
                   }}
                 >
+                  {/* Satoshi is the system's caption-display face — Instrument
+                      Serif is never used for live caption text. */}
+                  <option value="Satoshi, system-ui, sans-serif">Satoshi (recommended)</option>
                   <option value="Arial, sans-serif">Arial</option>
                   <option value="Verdana, sans-serif">Verdana</option>
-                  <option value="Georgia, serif">Georgia</option>
                   <option value="OpenDyslexic, sans-serif">OpenDyslexic</option>
                 </select>
               </div>
               <div>
-                <label className="block text-sm text-gray-600 mb-1">Size ({fontSize}px)</label>
+                <label htmlFor="display-size" className="input-label input-label-dark">
+                  Size <span className="font-mono text-mono-md text-capb-light">{fontSize}px</span>
+                </label>
                 <input
+                  id="display-size"
                   type="number"
                   min={24}
                   max={200}
@@ -340,47 +412,51 @@ function SettingsModal({
                     setFontSize(size);
                     sendDisplaySettings({ fontSize: size });
                   }}
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm text-gray-900"
+                  className="input input-dark"
                 />
               </div>
             </div>
-            <label className="block text-sm text-gray-600 mt-3 mb-1">Theme</label>
-            <div className="flex gap-2">
-              {([
-                ['light', 'Light', '#000000', '#FFFFFF'],
-                ['dark', 'Dark', '#E5E7EB', '#1F2937'],
-                ['high-contrast', 'Contrast', '#FFFF00', '#000000'],
-              ] as const).map(([key, label, textColor, bgColor]) => (
-                <button
-                  key={key}
-                  className={`flex-1 px-3 py-2 text-sm border rounded ${
-                    displayTheme === key
-                      ? 'border-purple-500 bg-purple-50 text-purple-700'
-                      : 'border-gray-300 text-gray-600 hover:bg-gray-50'
-                  }`}
-                  onClick={() => {
-                    setDisplayTheme(key);
-                    sendDisplaySettings({ textColor, backgroundColor: bgColor, highContrast: key === 'high-contrast' });
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
+            <span className="input-label input-label-dark mt-md">Theme</span>
+            <div className="flex gap-xs">
+              {(Object.keys(DISPLAY_THEMES) as DisplayThemeKey[]).map((key) => {
+                const theme = DISPLAY_THEMES[key];
+                return (
+                  <button
+                    key={key}
+                    aria-pressed={displayTheme === key}
+                    className={`seg seg-dark flex-1 ${displayTheme === key ? 'seg-active' : ''}`}
+                    onClick={() => {
+                      setDisplayTheme(key);
+                      sendDisplaySettings({
+                        textColor: theme.textColor,
+                        backgroundColor: theme.backgroundColor,
+                        highContrast: theme.highContrast,
+                      });
+                    }}
+                  >
+                    {theme.label}
+                  </button>
+                );
+              })}
             </div>
+            <p className="input-hint input-hint-dark">
+              Broadcast convention is white on pure black — the congregation sees only the words.
+            </p>
           </section>
 
           {/* Screens */}
           <section>
-            <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">Screens</h3>
+            <SectionHeading>Screens</SectionHeading>
             {(['primary', 'secondary'] as const).map((role) => {
               const isOpen = role === 'primary' ? windowState.primaryOpen : windowState.secondaryOpen;
               const currentScreen = role === 'primary' ? windowState.primaryScreenId : windowState.secondaryScreenId;
+              const label = role === 'primary' ? 'Display 1' : 'Display 2';
               return (
-                <div key={role} className="mb-3">
+                <div key={role} className="mb-md">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm text-gray-600">{role === 'primary' ? 'Display 1' : 'Display 2'}</span>
+                    <span className="input-label input-label-dark !mb-0">{label}</span>
                     <button
-                      className={`text-xs font-medium ${isOpen ? 'text-orange-500' : 'text-blue-500'}`}
+                      className={`btn btn-sm ${isOpen ? 'btn-ghost-dark' : 'btn-capb'}`}
                       onClick={() => {
                         if (role === 'primary') {
                           isOpen ? window.autoscribe.closeDisplay() : window.autoscribe.openDisplay();
@@ -393,7 +469,8 @@ function SettingsModal({
                     </button>
                   </div>
                   <select
-                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm text-gray-900 disabled:opacity-40"
+                    aria-label={`Screen for ${label}`}
+                    className="input input-dark"
                     disabled={!isOpen || screens.length === 0}
                     value={currentScreen ?? ''}
                     onChange={(e) => {
@@ -415,33 +492,31 @@ function SettingsModal({
 
           {/* Languages / Translation */}
           <section>
-            <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">Languages</h3>
-            <label className="flex items-center gap-2 cursor-pointer mb-2">
+            <SectionHeading>Languages</SectionHeading>
+            <label className="flex items-center gap-xs cursor-pointer mb-2">
               <input
                 type="checkbox"
+                className="accent-capb w-4 h-4"
                 checked={translation.enabled}
                 onChange={(e) => updateTranslation({ enabled: e.target.checked })}
               />
-              <span className="text-sm text-gray-700">Enable Spanish translation</span>
+              <span className="text-body-sm text-white/75">Enable Spanish translation</span>
             </label>
             {translation.enabled && (
-              <div className="space-y-3 pl-6">
+              <div className="space-y-md pl-md">
                 {([
                   ['displayLanguage', 'Display 1 shows'],
                   ['secondaryLanguage', 'Display 2 shows'],
                   ['viewerDefaultLanguage', 'Phones default to'],
                 ] as const).map(([key, label]) => (
                   <div key={key}>
-                    <label className="block text-xs text-gray-500 mb-1">{label}</label>
-                    <div className="flex gap-1.5">
+                    <span className="input-label input-label-dark">{label}</span>
+                    <div className="flex gap-xs" role="group" aria-label={label}>
                       {(['english', 'spanish', 'both'] as const).map((mode) => (
                         <button
                           key={mode}
-                          className={`flex-1 px-2 py-1 text-xs border rounded ${
-                            translation[key] === mode
-                              ? 'border-purple-500 bg-purple-50 text-purple-700'
-                              : 'border-gray-300 text-gray-500'
-                          }`}
+                          aria-pressed={translation[key] === mode}
+                          className={`seg seg-dark flex-1 ${translation[key] === mode ? 'seg-active' : ''}`}
                           onClick={() => updateTranslation({ [key]: mode })}
                         >
                           {LANGUAGE_LABELS[mode]}
@@ -455,28 +530,31 @@ function SettingsModal({
           </section>
 
           {/* Network */}
-          <section>
-            <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">Network Viewers</h3>
+          <section className="pb-sm">
+            <SectionHeading>Network Viewers</SectionHeading>
             <button
-              className={`px-4 py-2 rounded text-white text-sm font-medium ${
-                networkStatus?.running ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-500 hover:bg-blue-600'
-              }`}
+              className={`btn ${networkStatus?.running ? 'btn-ghost-dark' : 'btn-capb'}`}
               onClick={toggleNetwork}
             >
-              {networkStatus?.running ? 'Stop Server' : 'Start Server'}
+              {networkStatus?.running ? 'Stop server' : 'Start server'}
             </button>
             {networkStatus?.running && (
-              <div className="mt-3 space-y-2">
-                <p className="text-sm text-gray-600">
-                  <span className="font-medium">URL:</span>{' '}
-                  <span className="text-blue-500">{networkStatus.url}</span>
+              <div className="mt-md space-y-xs">
+                <p className="flex items-center gap-xs">
+                  <span className="eyebrow-muted">URL</span>
+                  <span className="font-mono text-mono-md text-capb-light">{networkStatus.url}</span>
                 </p>
-                <p className="text-sm text-gray-600">
-                  <span className="font-medium">Viewers:</span> {networkStatus.connectedClients}
+                <p className="flex items-center gap-xs">
+                  <span className="eyebrow-muted">Viewers</span>
+                  <span className="font-mono text-mono-md text-white">{networkStatus.connectedClients}</span>
                 </p>
                 {qrCode && (
-                  <div className="flex justify-center">
-                    <img src={qrCode} alt="QR Code" className="w-32 h-32" />
+                  <div className="flex justify-center pt-xs">
+                    <img
+                      src={qrCode}
+                      alt="QR code linking to the viewer page"
+                      className="w-32 h-32 rounded-md bg-white p-2"
+                    />
                   </div>
                 )}
               </div>
@@ -496,15 +574,14 @@ export function ControlApp() {
   const [status, setStatus] = useState<'idle' | 'recording' | 'paused'>('idle');
   const [audioLevel, setAudioLevel] = useState(0);
   const [wpm, setWpm] = useState(150);
-  const [fontFamily, setFontFamily] = useState('Arial, sans-serif');
-  const [fontSize, setFontSize] = useState(32);
-  const [displayTheme, setDisplayTheme] = useState<'light' | 'dark' | 'high-contrast'>('light');
+  const [fontFamily, setFontFamily] = useState(DEFAULT_SETTINGS.display.fontFamily);
+  const [fontSize, setFontSize] = useState(DEFAULT_SETTINGS.display.fontSize);
+  const [displayTheme, setDisplayTheme] = useState<DisplayThemeKey>('caption');
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [networkStatus, setNetworkStatus] = useState<NetworkStatus | null>(null);
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [appErrors, setAppErrors] = useState<string[]>([]);
   const [modelProgress, setModelProgress] = useState<number | null>(null);
-  const [sttLanguage, setSTTLanguage] = useState('en');
   const [audioDevices, setAudioDevices] = useState<AudioDevice[]>([]);
   const [selectedDevice, setSelectedDevice] = useState('default');
   const [inputType, setInputType] = useState<'microphone' | 'line-in'>('microphone');
@@ -518,7 +595,6 @@ export function ControlApp() {
     secondaryScreenId: null,
   });
   const [showSettings, setShowSettings] = useState(false);
-  const [targetLanguage, setTargetLanguage] = useState('Spanish');
 
   const transcriptEndRef = useRef<HTMLDivElement>(null);
   const spanishEndRef = useRef<HTMLDivElement>(null);
@@ -552,7 +628,8 @@ export function ControlApp() {
         setFontFamily(settings.display.fontFamily);
         setFontSize(settings.display.fontSize);
         if (settings.display.highContrast) setDisplayTheme('high-contrast');
-        else if (settings.display.backgroundColor === '#1F2937') setDisplayTheme('dark');
+        else if (settings.display.backgroundColor === DISPLAY_THEMES.caption.backgroundColor)
+          setDisplayTheme('caption');
         else setDisplayTheme('light');
       }
       if (settings.pacing) setWpm(settings.pacing.wpm);
@@ -677,7 +754,7 @@ export function ControlApp() {
   if (splash) {
     return (
       <div
-        className={`h-screen bg-white flex items-center justify-center transition-opacity duration-300 ${
+        className={`h-screen bg-bg flex items-center justify-center transition-opacity duration-300 ${
           splashFading ? 'opacity-0' : 'opacity-100'
         }`}
       >
@@ -686,152 +763,146 @@ export function ControlApp() {
     );
   }
 
+  const statusPresentation = STATUS_PRESENTATION[status];
+  const liveSegmentId = status === 'recording' ? newestSegmentId : null;
+
   return (
-    <div className="h-screen bg-white flex flex-col">
+    /* Operator / confidence view — dark UI palette, per the CaptionBuddy
+       desktop patterns in the design system. */
+    <div className="h-screen bg-dark text-white flex flex-col">
       {/* ─── Header ─────────────────────────────────────────── */}
-      <header className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold text-sm">C</span>
+      <header className="flex items-center justify-between px-lg h-[60px] shrink-0 border-b border-white/[0.08]">
+        <div className="flex items-center gap-md">
+          <div className="w-7 h-7 bg-capb rounded-md flex items-center justify-center shrink-0">
+            <span className="text-white font-bold text-body-sm leading-none">C</span>
           </div>
           <div>
-            <h1 className="text-base font-bold text-gray-900 leading-tight">CaptionBuddy</h1>
-            <p className="text-[10px] text-gray-400 uppercase tracking-widest">Live Caption & Translation</p>
+            <h1 className="font-bold text-[15px] leading-tight text-white">CaptionBuddy</h1>
+            <p className="eyebrow-muted !text-[10px]">Live Caption &amp; Translation</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+
+        <div className="flex items-center gap-md">
           {/* Status indicator */}
-          <div className="flex items-center gap-1.5">
-            <div className={`w-2 h-2 rounded-full ${
-              status === 'recording' ? 'bg-red-500 animate-pulse' :
-              status === 'paused' ? 'bg-yellow-500' : 'bg-gray-400'
-            }`} />
-            <span className="text-xs text-gray-500 uppercase">{status}</span>
+          <div className="flex items-center gap-2" role="status" aria-live="polite">
+            <span
+              className={`badge-dot ${status === 'recording' ? 'animate-pulse' : ''}`}
+              style={{ backgroundColor: statusPresentation.color }}
+            />
+            <span className="eyebrow-muted">{statusPresentation.label}</span>
           </div>
+
           {/* Network badge */}
           {networkStatus?.running && (
-            <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">
+            <span className="badge badge-dark">
+              <span className="badge-dot" style={{ backgroundColor: 'var(--success)' }} />
               {networkStatus.url.replace('http://', '')}
             </span>
           )}
-          {/* Settings */}
-          <button
-            className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50 text-gray-700"
-            onClick={() => setShowSettings(true)}
-          >
+
+          <button className="btn btn-ghost-dark btn-sm" onClick={() => setShowSettings(true)}>
             Settings
           </button>
         </div>
       </header>
 
       {/* ─── Toolbar ────────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between gap-sm px-lg py-md shrink-0 border-b border-white/[0.08] bg-dark-mid">
+        <div className="flex items-center gap-xs">
           {status === 'idle' ? (
-            <button
-              className="flex items-center gap-2 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium text-sm"
-              onClick={startSession}
-            >
-              <span className="w-2.5 h-2.5 bg-green-300 rounded-full" />
+            <button className="btn btn-capb" onClick={startSession}>
+              <span className="badge-dot bg-white/70" />
               Start Captioning
             </button>
           ) : status === 'recording' ? (
-            <div className="flex items-center gap-2">
-              <button
-                className="flex items-center gap-2 px-5 py-2.5 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg font-medium text-sm"
-                onClick={pauseSession}
-              >
-                Pause
-              </button>
-              <button
-                className="flex items-center gap-2 px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium text-sm"
-                onClick={stopSession}
-              >
-                Stop
-              </button>
-            </div>
+            <>
+              <button className="btn btn-warning" onClick={pauseSession}>Pause</button>
+              <button className="btn btn-danger" onClick={stopSession}>Stop</button>
+            </>
           ) : (
-            <div className="flex items-center gap-2">
-              <button
-                className="flex items-center gap-2 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium text-sm"
-                onClick={resumeSession}
-              >
-                Resume
-              </button>
-              <button
-                className="flex items-center gap-2 px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium text-sm"
-                onClick={stopSession}
-              >
-                Stop
-              </button>
-            </div>
+            <>
+              <button className="btn btn-capb" onClick={resumeSession}>Resume</button>
+              <button className="btn btn-danger" onClick={stopSession}>Stop</button>
+            </>
           )}
 
           {/* Save Transcript */}
           {status === 'idle' && segments.length > 0 ? (
-            <div className="flex items-center gap-2">
-              <button
-                className="px-4 py-2.5 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium"
-                onClick={handleExport}
-              >
-                Save Transcript
-              </button>
-              <button
-                className="px-4 py-2.5 text-sm text-gray-400 hover:text-gray-600"
-                onClick={handleDiscard}
-              >
+            <>
+              <button className="btn btn-ghost-dark" onClick={handleExport}>Save Transcript</button>
+              <button className="btn btn-ghost-dark !border-transparent" onClick={handleDiscard}>
                 Discard
               </button>
-            </div>
+            </>
           ) : (
-            <button
-              className="px-4 py-2.5 text-sm border border-gray-200 rounded-lg text-gray-400 cursor-default"
-              disabled
-            >
-              Save Transcript
-            </button>
+            <button className="btn btn-ghost-dark" disabled>Save Transcript</button>
           )}
         </div>
 
-        {/* Language selector */}
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-500">EN → SP</span>
-          <select
-            className="border border-gray-300 rounded px-3 py-1.5 text-sm text-gray-700"
-            value={targetLanguage}
-            onChange={(e) => {
-              setTargetLanguage(e.target.value);
-              // Enable/disable translation based on selection
-              if (e.target.value === 'None') {
-                updateTranslation({ enabled: false });
-              } else {
-                updateTranslation({ enabled: true });
-              }
-            }}
-          >
-            <option value="Spanish">Spanish</option>
-            <option value="None">None</option>
-          </select>
+        {/* Language selector — CaptionBuddy's signature control. Mono language
+            codes laid out as SOURCE → TARGET with a Violet active state. */}
+        <div className="flex items-center gap-md shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="eyebrow-muted">Source</span>
+            <span className="seg seg-dark seg-active cursor-default">EN</span>
+          </div>
+          <span aria-hidden="true" className="text-white/25">→</span>
+          <div className="flex items-center gap-2">
+            <span className="eyebrow-muted">Target</span>
+            <div className="flex gap-1" role="group" aria-label="Target language">
+              <button
+                aria-pressed={translation.enabled}
+                className={`seg seg-dark ${translation.enabled ? 'seg-active' : ''}`}
+                onClick={() => updateTranslation({ enabled: true })}
+              >
+                ES
+              </button>
+              <button
+                aria-pressed={!translation.enabled}
+                className={`seg seg-dark ${!translation.enabled ? 'seg-active' : ''}`}
+                onClick={() => updateTranslation({ enabled: false })}
+              >
+                OFF
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
       {/* ─── Model progress ─────────────────────────────────── */}
       {modelProgress !== null && (
-        <div className="bg-purple-700 text-white px-5 py-2 text-sm flex items-center gap-3">
-          <span>Loading model…</span>
-          <div className="flex-1 h-2 bg-purple-500 rounded overflow-hidden">
-            <div className="h-full bg-white transition-all duration-300" style={{ width: `${Math.round(modelProgress * 100)}%` }} />
+        <div className="flex items-center gap-md px-lg py-2 shrink-0 bg-capb-dark text-white">
+          <span className="eyebrow !text-white/70">Loading model</span>
+          <div
+            className="flex-1 h-1.5 bg-white/20 rounded-sm overflow-hidden"
+            role="progressbar"
+            aria-label="Model download progress"
+            aria-valuenow={Math.round(modelProgress * 100)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <div
+              className="h-full bg-white transition-all duration-300"
+              style={{ width: `${Math.round(modelProgress * 100)}%` }}
+            />
           </div>
-          <span className="tabular-nums">{Math.round(modelProgress * 100)}%</span>
+          <span className="font-mono text-mono-md tabular-nums">
+            {Math.round(modelProgress * 100)}%
+          </span>
         </div>
       )}
 
       {/* Error banners */}
       {appErrors.map((msg, i) => (
-        <div key={i} className="bg-red-600 text-white px-5 py-2 text-sm flex items-center justify-between">
+        <div
+          key={i}
+          role="alert"
+          className="callout callout-dark-error mx-lg mt-md flex items-center justify-between gap-sm shrink-0"
+        >
           <span>{msg}</span>
           <button
-            className="ml-4 text-white hover:text-red-200 font-bold"
+            aria-label="Dismiss error"
+            className="text-white/60 hover:text-white shrink-0"
             onClick={() => setAppErrors((prev) => prev.filter((_, idx) => idx !== i))}
           >
             ✕
@@ -841,25 +912,28 @@ export function ControlApp() {
 
       {/* ─── Split Transcript Panes ─────────────────────────── */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left: Original English */}
-        <div className="flex-1 flex flex-col border-r border-gray-200">
-          <div className="px-5 py-2 border-b border-gray-100">
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider font-mono">
-              Original <span className="text-gray-800">EN</span>
+        {/* Left: source transcript */}
+        <div className="flex-1 flex flex-col min-w-0 border-r border-white/[0.08]">
+          <div className="px-lg py-2 border-b border-white/[0.08] shrink-0">
+            <h2 className="eyebrow-muted">
+              Source <span className="text-white/70">· EN</span>
             </h2>
           </div>
-          <div className="flex-1 overflow-y-auto px-8 py-6 bg-gray-50/50">
+          <div className="flex-1 overflow-y-auto px-lg py-md">
             {segments.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-center">
-                <p className="text-2xl text-gray-700 font-light italic">Ready when you are</p>
-                <p className="text-sm text-gray-400 mt-2">Press Start Captioning to begin.</p>
+              <div className="flex flex-col items-center justify-center h-full text-center gap-2">
+                <p className="section-title text-title text-white/80">Ready when you are</p>
+                <p className="font-mono text-mono-sm uppercase tracking-widest text-white/30">
+                  Press Start Captioning to begin
+                </p>
               </div>
             ) : (
               segments.map((seg) => (
                 <EditableSegment
                   key={seg.id}
                   segment={seg}
-                  className="text-gray-900 leading-relaxed text-base"
+                  isLive={seg.id === liveSegmentId}
+                  className="text-white/90 leading-relaxed text-body"
                   onCommit={handleSegmentEdit}
                 />
               ))
@@ -868,29 +942,40 @@ export function ControlApp() {
           </div>
         </div>
 
-        {/* Right: Spanish Translation */}
-        <div className="flex-1 flex flex-col">
-          <div className="px-5 py-2 border-b border-purple-200 bg-purple-50">
-            <h2 className="text-xs font-semibold text-purple-500 uppercase tracking-wider font-mono">
-              Spanish <span className="text-purple-800">SP</span>
+        {/* Right: target translation */}
+        <div className="flex-1 flex flex-col min-w-0 bg-dark-mid">
+          <div className="px-lg py-2 border-b border-white/[0.08] shrink-0">
+            <h2 className="eyebrow">
+              Target <span className="text-capb-light">· ES</span>
             </h2>
           </div>
-          <div className="flex-1 overflow-y-auto px-8 py-6 bg-purple-100/40">
+          <div className="flex-1 overflow-y-auto px-lg py-md">
             {!translation.enabled ? (
-              <div className="flex flex-col items-center justify-center h-full text-center">
-                <p className="text-sm text-purple-500 italic">Translation model not installed.</p>
-                <p className="text-sm text-purple-400 mt-1">Open Settings → Languages to download it.</p>
+              <div className="flex flex-col items-center justify-center h-full text-center gap-2">
+                <p className="section-title text-heading text-white/60">Translation is off</p>
+                <p className="font-mono text-mono-sm uppercase tracking-widest text-white/30">
+                  Switch target to ES to turn it on
+                </p>
               </div>
             ) : segments.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center">
-                <p className="text-sm text-purple-400 italic">Translations will appear here.</p>
+                <p className="font-mono text-mono-sm uppercase tracking-widest text-white/30">
+                  Translations appear here
+                </p>
               </div>
             ) : (
               segments.map((seg) => (
-                <div key={seg.id} className="mb-2 px-3 py-1">
-                  <p className="text-gray-700 leading-relaxed text-base">
+                <div
+                  key={seg.id}
+                  className={`px-4 py-1 -mx-1 border-l-2 ${
+                    seg.id === liveSegmentId ? 'border-capb bg-white/[0.03]' : 'border-transparent'
+                  }`}
+                >
+                  <p className="text-white/90 leading-relaxed text-body">
                     {seg.translation || (
-                      <span className="text-purple-300 italic">Translating…</span>
+                      /* Not-yet-certain text renders muted and italic so the
+                         operator can spot it at a glance. */
+                      <span className="italic text-white/35">Translating…</span>
                     )}
                   </p>
                 </div>

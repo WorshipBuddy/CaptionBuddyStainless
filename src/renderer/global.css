@@ -2,10 +2,394 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─────────────────────────────────────────────────────────────────────────
+   WorshipBuddy design system tokens — design.worshipbuddy.org
+   Values are copied verbatim from the published system. Do not fork them
+   locally; if a value needs to change, change it upstream first.
+   ───────────────────────────────────────────────────────────────────────── */
 @layer base {
+  :root {
+    /* Neutrals */
+    --bg: #fafaf9;
+    --surface: #f4f4f0;
+    --border: #e4e4e7;
+    --text: #18181b;
+    --muted: #71717a;
+    --dark: #0f172a;
+    --dark-mid: #162032;
+
+    /* CaptionBuddy — Violet. The only product colour this app may use. */
+    --capb: #5b3fb0;
+    --capb-light: #e5def7;
+    --capb-dark: #3f2b82;
+
+    /* Semantic states */
+    --info: #3b82f6;
+    --success: #22c55e;
+    --warning: #f59e0b;
+    --error: #ef4444;
+
+    /* Radii */
+    --r-sm: 4px;
+    --r-md: 8px;
+    --r-lg: 12px;
+    --r-xl: 16px;
+
+    /* Elevation */
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06), 0 4px 16px rgba(0, 0, 0, 0.04);
+    --shadow-hover: 0 4px 20px rgba(0, 0, 0, 0.1), 0 1px 4px rgba(0, 0, 0, 0.06);
+
+    /* Dark-surface derivations. The operator view runs on --dark, so it needs
+       its own border/muted pair rather than the light-surface neutrals. */
+    --dark-border: rgba(255, 255, 255, 0.08);
+    --dark-border-strong: rgba(255, 255, 255, 0.16);
+    --dark-muted: rgba(255, 255, 255, 0.45);
+    --dark-faint: rgba(255, 255, 255, 0.28);
+  }
+
   body {
     font-family: 'Satoshi', system-ui, -apple-system, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Every interactive element shows a visible ring when reached by keyboard. */
+  :focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(91, 63, 176, 0.45);
+    border-radius: var(--r-md);
+  }
+}
+
+@layer components {
+  /* ── Buttons ─────────────────────────────────────────────────────────── */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-family: 'Satoshi', sans-serif;
+    font-weight: 600;
+    font-size: 14px;
+    border-radius: var(--r-lg);
+    padding: 10px 20px;
+    /* Desktop comfortable touch target. */
+    min-height: 36px;
+    border: none;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.15s ease;
+  }
+  .btn:disabled {
+    cursor: default;
+    opacity: 0.4;
+  }
+  .btn:disabled:hover {
+    transform: none;
+    box-shadow: none;
+  }
+
+  .btn-capb {
+    background: var(--capb);
+    color: white;
+  }
+  .btn-capb:hover:not(:disabled) {
+    background: var(--capb-dark);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(91, 63, 176, 0.32);
+  }
+
+  .btn-primary {
+    background: var(--text);
+    color: white;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: #27272a;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(24, 24, 27, 0.18);
+  }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--surface);
+    color: var(--text);
+  }
+
+  /* Ghost on a dark surface — the operator view's default secondary action. */
+  .btn-ghost-dark {
+    background: transparent;
+    color: var(--dark-muted);
+    border: 1px solid var(--dark-border-strong);
+  }
+  .btn-ghost-dark:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.06);
+    color: white;
+  }
+
+  /* Destructive actions reuse the Error semantic state — no new colours. */
+  .btn-danger {
+    background: var(--error);
+    color: white;
+  }
+  .btn-danger:hover:not(:disabled) {
+    background: #dc2626;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(239, 68, 68, 0.32);
+  }
+
+  .btn-warning {
+    background: var(--warning);
+    color: #422006;
+  }
+  .btn-warning:hover:not(:disabled) {
+    background: #d97706;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(245, 158, 11, 0.32);
+  }
+
+  .btn-lg {
+    padding: 14px 28px;
+    font-size: 16px;
+    border-radius: var(--r-xl);
+  }
+  .btn-sm {
+    padding: 6px 14px;
+    font-size: 12px;
+    border-radius: var(--r-md);
+    min-height: 32px;
+  }
+
+  /* ── Form elements ───────────────────────────────────────────────────── */
+  .input {
+    width: 100%;
+    font-family: 'Satoshi', sans-serif;
+    font-size: 14px;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    background: white;
+    color: var(--text);
+    transition: border-color 0.15s, box-shadow 0.15s;
+    outline: none;
+  }
+  .input:focus {
+    border-color: var(--capb);
+    box-shadow: 0 0 0 3px rgba(91, 63, 176, 0.15);
+  }
+  .input::placeholder {
+    color: var(--muted);
+  }
+  .input:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .input-dark {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: var(--dark-border-strong);
+    color: white;
+  }
+  .input-dark:focus {
+    border-color: var(--capb);
+    box-shadow: 0 0 0 3px rgba(91, 63, 176, 0.35);
+  }
+  .input-dark option {
+    background: var(--dark-mid);
+    color: white;
+  }
+
+  .input-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 6px;
+    display: block;
+  }
+  .input-label-dark {
+    color: rgba(255, 255, 255, 0.75);
+  }
+  .input-hint {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 5px;
+  }
+  .input-hint-dark {
+    color: var(--dark-faint);
+  }
+
+  select.input {
+    cursor: pointer;
+  }
+
+  /* ── Eyebrow / section labels ────────────────────────────────────────── */
+  .eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--capb);
+  }
+  .eyebrow-muted {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--dark-faint);
+  }
+
+  .section-title {
+    font-family: 'Instrument Serif', Georgia, serif;
+    font-weight: 400;
+    line-height: 1.1;
+  }
+
+  /* ── Badges ──────────────────────────────────────────────────────────── */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    padding: 3px 10px;
+    border-radius: 999px;
+  }
+  .badge-capb {
+    background: var(--capb-light);
+    color: var(--capb);
+  }
+  .badge-dark {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--dark-muted);
+    border: 1px solid var(--dark-border);
+  }
+  .badge-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* ── Cards ───────────────────────────────────────────────────────────── */
+  .card {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: var(--r-xl);
+    padding: 24px;
+    box-shadow: var(--shadow-card);
+  }
+  .card-dark {
+    background: var(--dark-mid);
+    border: 1px solid var(--dark-border);
+    border-radius: var(--r-xl);
+    padding: 24px;
+  }
+
+  /* ── Alerts / callouts ───────────────────────────────────────────────── */
+  .callout {
+    padding: 14px 18px;
+    border-radius: var(--r-lg);
+    border-left: 3px solid;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  .callout-info {
+    background: #eff6ff;
+    border-color: var(--info);
+    color: #1e40af;
+  }
+  .callout-success {
+    background: #f0fdf4;
+    border-color: var(--success);
+    color: #166534;
+  }
+  .callout-warning {
+    background: #fffbeb;
+    border-color: var(--warning);
+    color: #92400e;
+  }
+  .callout-error {
+    background: #fef2f2;
+    border-color: var(--error);
+    color: #991b1b;
+  }
+
+  /* Callouts on the dark operator surface keep the semantic edge colour but
+     tint the fill instead of using the light-surface pastels. */
+  .callout-dark-error {
+    background: rgba(239, 68, 68, 0.12);
+    border-color: var(--error);
+    color: #fecaca;
+  }
+  .callout-dark-warning {
+    background: rgba(245, 158, 11, 0.12);
+    border-color: var(--warning);
+    color: #fde68a;
+  }
+  .callout-dark-info {
+    background: rgba(59, 130, 246, 0.12);
+    border-color: var(--info);
+    color: #bfdbfe;
+  }
+
+  /* ── Tabs / segmented mono controls ──────────────────────────────────── */
+  .seg {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    padding: 6px 12px;
+    min-height: 32px;
+    border-radius: var(--r-md);
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    transition: color 0.15s, background 0.15s, border-color 0.15s;
+  }
+  .seg:hover:not(.seg-active) {
+    color: var(--text);
+    background: var(--surface);
+  }
+  .seg-active {
+    color: var(--capb);
+    border-color: var(--capb);
+    background: var(--capb-light);
+  }
+
+  .seg-dark {
+    border-color: var(--dark-border-strong);
+    color: var(--dark-muted);
+  }
+  .seg-dark:hover:not(.seg-active) {
+    color: white;
+    background: rgba(255, 255, 255, 0.06);
+  }
+  .seg-dark.seg-active {
+    color: white;
+    border-color: var(--capb);
+    background: var(--capb);
+  }
+}
+
+/* Motion communicates rather than decorates — and always yields to the
+   viewer's own preference. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
