@@ -42,9 +42,9 @@
 
   /* ───────────────────────────────────────────────────────────────────────
      Operator UI surface tokens.
-     The design system prescribes the dark palette for the operator view, but
-     the panel also gets used in bright rooms and at rehearsal, so both themes
-     exist and every component reads these rather than a hardcoded colour.
+     Light is the default and is therefore what bare :root resolves to; the
+     design system's dark operator palette is opt-in via the header toggle.
+     Every component reads these rather than a hardcoded colour.
 
      Contrast is checked against the surface each token actually lands on; the
      figures below are the WCAG ratios that keep the panel at AA.

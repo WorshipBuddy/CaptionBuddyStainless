@@ -9,10 +9,11 @@
     <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=satoshi@300,400,500,600,700&display=swap" />
     <title>CaptionBuddy</title>
     <script>
-      // Paint the operator's saved theme before first paint, so switching to
-      // light mode does not flash the dark palette on every launch.
+      // Paint the operator's saved theme before first paint, so switching
+      // themes does not flash the wrong palette on every launch.
+      // Keep this default in step with readStoredTheme() in control/App.tsx.
       (function () {
-        var theme = 'dark';
+        var theme = 'light';
         try {
           var saved = localStorage.getItem('captionbuddy-ui-theme');
           if (saved === 'light' || saved === 'dark') theme = saved;

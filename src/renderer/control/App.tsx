@@ -54,9 +54,12 @@ type UiTheme = 'light' | 'dark';
 const UI_THEME_STORAGE_KEY = 'captionbuddy-ui-theme';
 
 /**
- * The design system prescribes the dark palette for the operator view, so that
- * is the default — but the panel also gets used in daylit rooms and at
- * rehearsal, so the operator can switch and the choice sticks per machine.
+ * Light is the default. The design system prescribes the dark palette for an
+ * operator view, but most of this panel's use is in lit rooms and at
+ * rehearsal, so dark is opt-in via the header toggle. The choice sticks per
+ * machine.
+ *
+ * Keep this default in step with the pre-paint script in control/index.html.
  */
 function readStoredTheme(): UiTheme {
   try {
@@ -65,7 +68,7 @@ function readStoredTheme(): UiTheme {
   } catch {
     /* private mode / storage disabled */
   }
-  return 'dark';
+  return 'light';
 }
 
 // ─── Brand ──────────────────────────────────────────────────────────────────
@@ -685,15 +688,21 @@ export function ControlApp() {
   // background in the right theme before React mounts anything.
   useEffect(() => {
     document.documentElement.setAttribute('data-ui-theme', uiTheme);
-    try {
-      localStorage.setItem(UI_THEME_STORAGE_KEY, uiTheme);
-    } catch {
-      /* private mode / storage disabled */
-    }
   }, [uiTheme]);
 
+  // Written only when the operator actually picks a theme, never on mount.
+  // Persisting the default too would freeze whatever the default happened to
+  // be on first launch, so a later change to it would never reach anyone.
   const toggleTheme = useCallback(() => {
-    setUiTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+    setUiTheme((prev) => {
+      const next = prev === 'dark' ? 'light' : 'dark';
+      try {
+        localStorage.setItem(UI_THEME_STORAGE_KEY, next);
+      } catch {
+        /* private mode / storage disabled */
+      }
+      return next;
+    });
   }, []);
 
   // Splash screen timer

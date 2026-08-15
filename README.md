@@ -236,7 +236,9 @@ Tokens live in two places and should stay in step with the published system rath
 
 ### Control panel light and dark mode
 
-The control panel ships in dark mode, as the design system prescribes for an operator view, and the sun/moon button in the header switches it. The choice is remembered per machine in `localStorage` and is re-applied before first paint, so relaunching does not flash the wrong palette.
+The control panel **defaults to light mode**, and the sun/moon button in the header switches to dark. The choice is remembered per machine in `localStorage` and re-applied before first paint, so relaunching does not flash the wrong palette. Two places carry that default and must stay in step: `readStoredTheme()` in `control/App.tsx` and the pre-paint script in `control/index.html`.
+
+The design system prescribes the dark palette for an operator/confidence view; light is the default here because most of this panel's use is in lit rooms and at rehearsal. Dark remains one click away and is fully supported.
 
 Components never hardcode a colour. They read `--ui-*` surface tokens which the two theme blocks in `global.css` redefine, surfaced to Tailwind as `bg-ui-surface`, `text-ui-muted`, `border-ui-border` and friends. Adding a component means using those tokens; both themes then follow for free.
 
