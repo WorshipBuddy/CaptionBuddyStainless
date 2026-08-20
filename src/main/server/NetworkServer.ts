@@ -67,7 +67,7 @@ export class NetworkServer extends EventEmitter {
     // Health check / status endpoint
     this.app.get('/api/status', (_req, res) => {
       res.json({
-        app: 'AutoScribe',
+        app: 'CaptionBuddy',
         clients: this.wss?.clients.size ?? 0,
       });
     });
@@ -223,12 +223,34 @@ export class NetworkServer extends EventEmitter {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>AutoScribe Viewer</title>
+  <title>CaptionBuddy Viewer</title>
   <style>
+    /* WorshipBuddy design system tokens (design.worshipbuddy.org).
+       Web fonts are deliberately NOT fetched here: the viewer is served off the
+       church's own network, which often has no internet. Satoshi and JetBrains
+       Mono fall back to the closest native grotesque/mono on each phone. */
+    :root {
+      --capb: #5B3FB0;
+      --capb-dark: #3F2B82;
+      --muted: #71717A;
+      --success: #22C55E;
+      --warning: #F59E0B;
+      --error: #EF4444;
+      --r-md: 8px;
+      --r-lg: 12px;
+      --font-ui: 'Satoshi', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
-      font-family: Arial, sans-serif;
+      font-family: var(--font-ui);
+      /* Paint the caption default immediately so the phone never flashes white
+         before the operator's settings arrive over the socket. */
+      background: #000000;
+      color: #FFFFFF;
+      line-height: 1.4;
       overflow: hidden;
       height: 100vh;
       transition: background-color 0.3s, color 0.3s;
@@ -248,62 +270,92 @@ export class NetworkServer extends EventEmitter {
       transition: opacity 0.5s;
     }
 
+    /* Status reuses the semantic states — no new colours.
+       Success = live, Warning = connecting, Error = disconnected. */
     #status {
       position: fixed;
       top: 0.5rem;
       right: 0.5rem;
-      padding: 0.25rem 0.5rem;
-      border-radius: 0.25rem;
-      font-size: 0.7rem;
-      opacity: 0.5;
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      opacity: 0.6;
       z-index: 10;
     }
 
-    .status-connected { background: #22c55e; color: white; }
-    .status-disconnected { background: #ef4444; color: white; }
-    .status-connecting { background: #eab308; color: white; }
+    .status-connected { background: var(--success); color: white; }
+    .status-disconnected { background: var(--error); color: white; }
+    .status-connecting { background: var(--warning); color: #422006; }
 
     #waiting {
       text-align: center;
-      opacity: 0.2;
-      font-size: 1.5rem;
+      opacity: 0.25;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
     }
 
-    /* Language switcher — each device chooses for itself */
+    /* Language switcher — each device chooses for itself. This is
+       CaptionBuddy's signature control: mono language codes, Violet active. */
     #langbar {
       position: fixed;
       bottom: 0;
       left: 0;
       right: 0;
       display: flex;
-      gap: 0.5rem;
+      gap: 8px;
       justify-content: center;
-      padding: 0.5rem;
+      padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
       background: rgba(127, 127, 127, 0.15);
-      backdrop-filter: blur(6px);
+      backdrop-filter: blur(12px);
       z-index: 10;
     }
 
     .lang-btn {
       flex: 1 1 0;
       max-width: 10rem;
-      padding: 0.6rem 0.5rem;
-      font-size: 0.95rem;
-      font-family: inherit;
+      /* 44px minimum touch target on mobile. */
+      min-height: 44px;
+      padding: 10px 12px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.04em;
       color: inherit;
-      background: rgba(127, 127, 127, 0.2);
-      border: 1px solid rgba(127, 127, 127, 0.4);
-      border-radius: 0.4rem;
+      background: rgba(127, 127, 127, 0.16);
+      border: 1px solid rgba(127, 127, 127, 0.35);
+      border-radius: var(--r-lg);
       cursor: pointer;
+      transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    }
+
+    .lang-btn:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(91, 63, 176, 0.45);
     }
 
     .lang-btn.active {
-      background: #2563eb;
-      border-color: #2563eb;
+      background: var(--capb);
+      border-color: var(--capb);
       color: #fff;
-      font-weight: 600;
     }
 
+    .lang-sub {
+      display: block;
+      font-family: var(--font-ui);
+      font-size: 11px;
+      opacity: 0.7;
+      margin-top: 2px;
+      letter-spacing: 0;
+    }
+
+    /* Uncertain / pending text renders muted and italic. */
     .translation {
       margin-top: 0.35rem;
       opacity: 0.75;
@@ -311,23 +363,30 @@ export class NetworkServer extends EventEmitter {
     }
 
     /* Keep the last line clear of the switcher */
-    body.has-langbar #container { padding-bottom: 4.5rem; }
+    body.has-langbar #container { padding-bottom: 5.5rem; }
 
     @media (max-width: 640px) {
-      #container { padding: 1rem; }
-      body.has-langbar #container { padding-bottom: 4.5rem; }
+      #container { padding: 1.25rem; }
+      body.has-langbar #container { padding-bottom: 5.5rem; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+      }
     }
   </style>
 </head>
 <body>
-  <div id="status" class="status-connecting">Connecting...</div>
-  <div id="langbar" style="display:none">
-    <button class="lang-btn active" data-lang="english">English</button>
-    <button class="lang-btn" data-lang="spanish">Espa&ntilde;ol</button>
-    <button class="lang-btn" data-lang="both">Ambos</button>
+  <div id="status" class="status-connecting" role="status" aria-live="polite">Connecting</div>
+  <div id="langbar" style="display:none" role="group" aria-label="Caption language">
+    <button class="lang-btn active" data-lang="english">EN<span class="lang-sub">English</span></button>
+    <button class="lang-btn" data-lang="spanish">ES<span class="lang-sub">Espa&ntilde;ol</span></button>
+    <button class="lang-btn" data-lang="both">EN&nbsp;+&nbsp;ES<span class="lang-sub">Ambos</span></button>
   </div>
   <div id="container">
-    <p id="waiting">Waiting for transcription...</p>
+    <p id="waiting">Waiting for captions</p>
   </div>
 
   <script>
@@ -349,11 +408,12 @@ export class NetworkServer extends EventEmitter {
 
     function applySettings(s) {
       settings = s;
-      document.body.style.fontFamily = s.fontFamily || 'Arial, sans-serif';
+      document.body.style.fontFamily = s.fontFamily || 'var(--font-ui)';
       document.body.style.fontSize = (s.fontSize || 32) + 'px';
-      document.body.style.color = s.textColor || '#000000';
-      document.body.style.backgroundColor = s.backgroundColor || '#FFFFFF';
-      document.body.style.lineHeight = s.lineHeight || 1.6;
+      // Caption defaults follow the broadcast convention: white on pure black.
+      document.body.style.color = s.textColor || '#FFFFFF';
+      document.body.style.backgroundColor = s.backgroundColor || '#000000';
+      document.body.style.lineHeight = s.lineHeight || 1.4;
       container.style.textAlign = s.textAlign || 'left';
     }
 
@@ -525,7 +585,9 @@ export class NetworkServer extends EventEmitter {
       language = next;
       try { localStorage.setItem('autoscribe-language', next); } catch (e) { /* private mode */ }
       Array.prototype.forEach.call(langButtons, function (btn) {
-        btn.className = btn.getAttribute('data-lang') === next ? 'lang-btn active' : 'lang-btn';
+        const isActive = btn.getAttribute('data-lang') === next;
+        btn.className = isActive ? 'lang-btn active' : 'lang-btn';
+        btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
       });
       renderLines();
     }
@@ -552,13 +614,13 @@ export class NetworkServer extends EventEmitter {
       ws = new WebSocket(protocol + '//' + location.host);
 
       ws.onopen = () => {
-        statusEl.textContent = 'Connected';
+        statusEl.textContent = 'Live';
         statusEl.className = 'status-connected';
         clearTimeout(reconnectTimer);
       };
 
       ws.onclose = () => {
-        statusEl.textContent = 'Disconnected';
+        statusEl.textContent = 'Offline';
         statusEl.className = 'status-disconnected';
         reconnectTimer = setTimeout(connect, 2000);
       };

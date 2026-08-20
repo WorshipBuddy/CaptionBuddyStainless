@@ -2,10 +2,438 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─────────────────────────────────────────────────────────────────────────
+   WorshipBuddy design system tokens — design.worshipbuddy.org
+   Values are copied verbatim from the published system. Do not fork them
+   locally; if a value needs to change, change it upstream first.
+   ───────────────────────────────────────────────────────────────────────── */
 @layer base {
+  :root {
+    /* Neutrals */
+    --bg: #fafaf9;
+    --surface: #f4f4f0;
+    --border: #e4e4e7;
+    --text: #18181b;
+    --muted: #71717a;
+    --dark: #0f172a;
+    --dark-mid: #162032;
+
+    /* CaptionBuddy — Violet. The only product colour this app may use. */
+    --capb: #5b3fb0;
+    --capb-light: #e5def7;
+    --capb-dark: #3f2b82;
+
+    /* Semantic states */
+    --info: #3b82f6;
+    --success: #22c55e;
+    --warning: #f59e0b;
+    --error: #ef4444;
+
+    /* Radii */
+    --r-sm: 4px;
+    --r-md: 8px;
+    --r-lg: 12px;
+    --r-xl: 16px;
+
+    /* Elevation */
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06), 0 4px 16px rgba(0, 0, 0, 0.04);
+    --shadow-hover: 0 4px 20px rgba(0, 0, 0, 0.1), 0 1px 4px rgba(0, 0, 0, 0.06);
+  }
+
+  /* ───────────────────────────────────────────────────────────────────────
+     Operator UI surface tokens.
+     Light is the default and is therefore what bare :root resolves to; the
+     design system's dark operator palette is opt-in via the header toggle.
+     Every component reads these rather than a hardcoded colour.
+
+     Contrast is checked against the surface each token actually lands on; the
+     figures below are the WCAG ratios that keep the panel at AA.
+     ─────────────────────────────────────────────────────────────────────── */
+  :root,
+  [data-ui-theme='light'] {
+    --ui-bg: var(--bg);
+    /* White panels on warm white, which is the system's card treatment — and
+       keeps Muted at 4.8:1 rather than the 4.4:1 it scores on --surface. */
+    --ui-surface: #ffffff;
+    --ui-card: #ffffff;
+    --ui-input-bg: #ffffff;
+    --ui-border: var(--border);
+    --ui-border-strong: var(--border);
+    --ui-text: var(--text); /* 15.4:1 on --bg */
+    --ui-muted: var(--muted); /* 5.1:1 on --bg */
+    --ui-faint: var(--muted); /* hierarchy comes from size/case, not lightness */
+    --ui-accent: var(--capb); /* 6.0:1 on --bg */
+    --ui-hover: rgba(24, 24, 27, 0.05);
+    --ui-live: rgba(91, 63, 176, 0.07);
+    --ui-seg-bg: var(--capb-light);
+    --ui-seg-fg: var(--capb);
+    --ui-card-shadow: var(--shadow-card);
+  }
+
+  [data-ui-theme='dark'] {
+    --ui-bg: var(--dark);
+    --ui-surface: var(--dark-mid);
+    --ui-card: var(--dark-mid);
+    --ui-input-bg: rgba(255, 255, 255, 0.04);
+    --ui-border: rgba(255, 255, 255, 0.08);
+    --ui-border-strong: rgba(255, 255, 255, 0.16);
+    --ui-text: #ffffff; /* 17.4:1 on --dark */
+    --ui-muted: rgba(255, 255, 255, 0.65); /* 7.3:1 on --dark */
+    --ui-faint: rgba(255, 255, 255, 0.5); /* 4.8:1 on --dark */
+    /* Violet at full strength is only 2.2:1 on --dark-mid, so accent TEXT on a
+       dark surface uses the light tint instead — 12.6:1. Full-strength Violet
+       stays where it belongs: as a fill behind white text. */
+    --ui-accent: var(--capb-light);
+    --ui-hover: rgba(255, 255, 255, 0.06);
+    --ui-live: rgba(255, 255, 255, 0.03);
+    --ui-seg-bg: var(--capb);
+    --ui-seg-fg: #ffffff;
+    --ui-card-shadow: none;
+  }
+
   body {
     font-family: 'Satoshi', system-ui, -apple-system, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Only the operator window opts into a theme. The display windows paint
+     their own caption background, so they must not pick this up. */
+  html[data-ui-theme] body {
+    background: var(--ui-bg);
+    color: var(--ui-text);
+  }
+
+  /* Every interactive element shows a visible ring when reached by keyboard. */
+  :focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(91, 63, 176, 0.45);
+    border-radius: var(--r-md);
+  }
+  [data-ui-theme='dark'] :focus-visible {
+    box-shadow: 0 0 0 3px rgba(229, 222, 247, 0.5);
+  }
+}
+
+@layer components {
+  /* ── Buttons ─────────────────────────────────────────────────────────── */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-family: 'Satoshi', sans-serif;
+    font-weight: 600;
+    font-size: 14px;
+    border-radius: var(--r-lg);
+    padding: 10px 20px;
+    /* Desktop comfortable touch target. */
+    min-height: 36px;
+    border: none;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.15s ease;
+  }
+  .btn:disabled {
+    cursor: default;
+    opacity: 0.4;
+  }
+  .btn:disabled:hover {
+    transform: none;
+    box-shadow: none;
+  }
+
+  .btn-capb {
+    background: var(--capb);
+    color: white;
+  }
+  .btn-capb:hover:not(:disabled) {
+    background: var(--capb-dark);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(91, 63, 176, 0.32);
+  }
+
+  .btn-primary {
+    background: var(--text);
+    color: white;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: #27272a;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(24, 24, 27, 0.18);
+  }
+
+  /* Secondary action — reads correctly on either theme. */
+  .btn-ghost {
+    background: transparent;
+    color: var(--ui-muted);
+    border: 1px solid var(--ui-border-strong);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--ui-hover);
+    color: var(--ui-text);
+  }
+
+  /* Destructive actions reuse the Error semantic state — no new colours. */
+  .btn-danger {
+    background: var(--error);
+    color: white;
+  }
+  .btn-danger:hover:not(:disabled) {
+    background: #dc2626;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(239, 68, 68, 0.32);
+  }
+
+  .btn-warning {
+    background: var(--warning);
+    color: #422006;
+  }
+  .btn-warning:hover:not(:disabled) {
+    background: #d97706;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(245, 158, 11, 0.32);
+  }
+
+  .btn-lg {
+    padding: 14px 28px;
+    font-size: 16px;
+    border-radius: var(--r-xl);
+  }
+  .btn-sm {
+    padding: 6px 14px;
+    font-size: 12px;
+    border-radius: var(--r-md);
+    min-height: 32px;
+  }
+
+  /* Icon-only button, e.g. the theme toggle and the modal close. */
+  .btn-icon {
+    width: 32px;
+    height: 32px;
+    min-height: 32px;
+    padding: 0;
+    border-radius: var(--r-md);
+  }
+
+  /* ── Form elements ───────────────────────────────────────────────────── */
+  .input {
+    width: 100%;
+    font-family: 'Satoshi', sans-serif;
+    font-size: 14px;
+    padding: 10px 14px;
+    border: 1px solid var(--ui-border-strong);
+    border-radius: var(--r-lg);
+    background: var(--ui-input-bg);
+    color: var(--ui-text);
+    transition: border-color 0.15s, box-shadow 0.15s;
+    outline: none;
+  }
+  .input:focus {
+    border-color: var(--capb);
+    box-shadow: 0 0 0 3px rgba(91, 63, 176, 0.25);
+  }
+  .input::placeholder {
+    color: var(--ui-muted);
+  }
+  .input:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  /* Native select popups do not inherit the page background on every
+     platform, so the options are painted explicitly. */
+  .input option {
+    background: var(--ui-card);
+    color: var(--ui-text);
+  }
+
+  .input-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ui-text);
+    margin-bottom: 6px;
+    display: block;
+  }
+  .input-hint {
+    font-size: 12px;
+    color: var(--ui-muted);
+    margin-top: 5px;
+  }
+
+  select.input {
+    cursor: pointer;
+  }
+
+  /* ── Eyebrow / section labels ────────────────────────────────────────── */
+  .eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--ui-accent);
+  }
+  .eyebrow-muted {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--ui-faint);
+  }
+
+  .section-title {
+    font-family: 'Instrument Serif', Georgia, serif;
+    font-weight: 400;
+    line-height: 1.1;
+  }
+
+  /* Page-entrance motion: the system's 'long' duration (400–600ms) and enter
+     easing — fast start, soft settle. The prefers-reduced-motion block at the
+     end of this file neutralises it. */
+  .motion-enter {
+    animation: ui-enter 550ms cubic-bezier(0.21, 0.47, 0.32, 0.98) both;
+  }
+  @keyframes ui-enter {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* ── Badges ──────────────────────────────────────────────────────────── */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    padding: 3px 10px;
+    border-radius: 999px;
+  }
+  .badge-capb {
+    background: var(--capb-light);
+    color: var(--capb);
+  }
+  .badge-neutral {
+    background: var(--ui-hover);
+    color: var(--ui-muted);
+    border: 1px solid var(--ui-border);
+  }
+  .badge-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* ── Cards ───────────────────────────────────────────────────────────── */
+  .card {
+    background: var(--ui-card);
+    border: 1px solid var(--ui-border);
+    border-radius: var(--r-xl);
+    padding: 24px;
+    box-shadow: var(--ui-card-shadow);
+  }
+
+  /* ── Alerts / callouts ───────────────────────────────────────────────── */
+  .callout {
+    padding: 14px 18px;
+    border-radius: var(--r-lg);
+    border-left: 3px solid;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  .callout-info {
+    background: var(--ui-callout-info-bg);
+    border-color: var(--info);
+    color: var(--ui-callout-info-fg);
+  }
+  .callout-success {
+    background: var(--ui-callout-success-bg);
+    border-color: var(--success);
+    color: var(--ui-callout-success-fg);
+  }
+  .callout-warning {
+    background: var(--ui-callout-warning-bg);
+    border-color: var(--warning);
+    color: var(--ui-callout-warning-fg);
+  }
+  .callout-error {
+    background: var(--ui-callout-error-bg);
+    border-color: var(--error);
+    color: var(--ui-callout-error-fg);
+  }
+
+  /* ── Tabs / segmented mono controls ──────────────────────────────────── */
+  .seg {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    padding: 6px 12px;
+    min-height: 32px;
+    border-radius: var(--r-md);
+    border: 1px solid var(--ui-border-strong);
+    background: transparent;
+    color: var(--ui-muted);
+    cursor: pointer;
+    transition: color 0.15s, background 0.15s, border-color 0.15s;
+  }
+  .seg:hover:not(.seg-active) {
+    color: var(--ui-text);
+    background: var(--ui-hover);
+  }
+  .seg-active {
+    background: var(--ui-seg-bg);
+    color: var(--ui-seg-fg);
+    border-color: var(--capb);
+  }
+}
+
+/* Callout fills sit outside @layer components so the theme blocks can set
+   them without specificity games. Light uses the system's pastel fills; dark
+   tints the same semantic edge colour instead, since the pastels wash out. */
+:root,
+[data-ui-theme='light'] {
+  --ui-callout-info-bg: #eff6ff;
+  --ui-callout-info-fg: #1e40af;
+  --ui-callout-success-bg: #f0fdf4;
+  --ui-callout-success-fg: #166534;
+  --ui-callout-warning-bg: #fffbeb;
+  --ui-callout-warning-fg: #92400e;
+  --ui-callout-error-bg: #fef2f2;
+  --ui-callout-error-fg: #991b1b;
+}
+
+[data-ui-theme='dark'] {
+  --ui-callout-info-bg: rgba(59, 130, 246, 0.12);
+  --ui-callout-info-fg: #bfdbfe;
+  --ui-callout-success-bg: rgba(34, 197, 94, 0.12);
+  --ui-callout-success-fg: #bbf7d0;
+  --ui-callout-warning-bg: rgba(245, 158, 11, 0.12);
+  --ui-callout-warning-fg: #fde68a;
+  --ui-callout-error-bg: rgba(239, 68, 68, 0.12);
+  --ui-callout-error-fg: #fecaca;
+}
+
+/* Motion communicates rather than decorates — and always yields to the
+   viewer's own preference. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

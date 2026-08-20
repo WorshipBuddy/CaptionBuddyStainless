@@ -493,7 +493,7 @@ export function registerIpcHandlers(): void {
 
     const { filePath } = await dialog.showSaveDialog({
       title: 'Export Transcript',
-      defaultPath: `autoscribe-${new Date().toISOString().slice(0, 10)}.txt`,
+      defaultPath: `captionbuddy-${new Date().toISOString().slice(0, 10)}.txt`,
       filters: [{ name: 'Text Files', extensions: ['txt'] }],
     });
 

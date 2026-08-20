@@ -53,13 +53,50 @@ export interface AppSettings {
   translation: TranslationSettings;
 }
 
+export type DisplayThemeKey = 'caption' | 'light' | 'high-contrast';
+
+export interface DisplayTheme {
+  label: string;
+  textColor: string;
+  backgroundColor: string;
+  highContrast: boolean;
+}
+
+/**
+ * Caption output themes. `caption` is the broadcast convention the design
+ * system calls for — white on pure black, no chrome — and is the default.
+ * `light` uses the system's warm-white/ink neutrals rather than pure #FFF/#000.
+ */
+export const DISPLAY_THEMES: Record<DisplayThemeKey, DisplayTheme> = {
+  caption: {
+    label: 'Caption',
+    textColor: '#FFFFFF',
+    backgroundColor: '#000000',
+    highContrast: false,
+  },
+  light: {
+    label: 'Light',
+    textColor: '#18181B',
+    backgroundColor: '#FAFAF9',
+    highContrast: false,
+  },
+  'high-contrast': {
+    label: 'Contrast',
+    textColor: '#FFFF00',
+    backgroundColor: '#000000',
+    highContrast: true,
+  },
+};
+
 export const DEFAULT_SETTINGS: AppSettings = {
   display: {
-    fontFamily: 'Arial, sans-serif',
-    fontSize: 32,
-    textColor: '#000000',
-    backgroundColor: '#FFFFFF',
-    lineHeight: 1.6,
+    // Satoshi is the design system's caption-display face; 1.4 is its
+    // prescribed line height for caption output.
+    fontFamily: 'Satoshi, system-ui, sans-serif',
+    fontSize: 48,
+    textColor: DISPLAY_THEMES.caption.textColor,
+    backgroundColor: DISPLAY_THEMES.caption.backgroundColor,
+    lineHeight: 1.4,
     textAlign: 'left',
     highContrast: false,
   },

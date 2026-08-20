@@ -9,7 +9,8 @@ AutoScribe is an offline, AI-powered transcription tool designed for churches to
 - **English-to-Spanish translation** on-device, shown split-screen, on a screen of its own, or on a second projector
 - **Editable transcript** — correct a misheard word in the control panel and it updates instantly on the projector and on phones
 - **Readable pacing** with sentence-by-sentence, word-by-word, and instant display modes (150 to 300 WPM)
-- **Customizable display** including font family, size, color themes (light, dark, high contrast), and line height
+- **Customizable display** including font family, size, color themes (caption, light, high contrast), and line height
+- **WorshipBuddy design system** throughout — see [Design](#design)
 - **Multiple viewing options**: operator control panel, up to two fullscreen display windows on separate monitors, and networked viewers for phones and tablets via WebSocket
 - **Per-device language choice** so each phone picks English, Spanish, or both independently
 - **Bible reference detection** that automatically formats spoken references (e.g., "John 316", "John chapter 3 verse 16", "Proverbs twenty four verse eleven") into a standardized bold display
@@ -218,6 +219,37 @@ src/
   assets/                # Logo and app icon
 ```
 
+## Design
+
+The UI follows the WorshipBuddy design system at **[design.worshipbuddy.org](https://design.worshipbuddy.org)**. CaptionBuddy's product colour is Violet (`#5B3FB0`); it is the only product colour this app uses as an accent.
+
+| Surface | What the system prescribes |
+|---------|----------------------------|
+| Control panel | Operator / confidence view — dark UI palette (`#0F172A`), Violet edge on the line that is currently live |
+| Display windows | Caption output — pure black, white text, Satoshi, no chrome |
+| Phone viewer | Same caption output, plus the mono `EN / ES / EN+ES` language switcher with a Violet active state |
+
+Tokens live in two places and should stay in step with the published system rather than being forked locally:
+
+- `src/renderer/global.css` — CSS custom properties and the `.btn` / `.input` / `.badge` / `.callout` / `.seg` component classes
+- `tailwind.config.js` — the same palette, radii, shadows, spacing, and type scale as Tailwind theme values
+
+### Control panel light and dark mode
+
+The control panel **defaults to light mode**, and the sun/moon button in the header switches to dark. The choice is remembered per machine in `localStorage` and re-applied before first paint, so relaunching does not flash the wrong palette. Two places carry that default and must stay in step: `readStoredTheme()` in `control/App.tsx` and the pre-paint script in `control/index.html`.
+
+The design system prescribes the dark palette for an operator/confidence view; light is the default here because most of this panel's use is in lit rooms and at rehearsal. Dark remains one click away and is fully supported.
+
+Components never hardcode a colour. They read `--ui-*` surface tokens which the two theme blocks in `global.css` redefine, surfaced to Tailwind as `bg-ui-surface`, `text-ui-muted`, `border-ui-border` and friends. Adding a component means using those tokens; both themes then follow for free.
+
+One rule is worth knowing before you reach for Violet on a dark surface: `#5B3FB0` scores only **2.2:1** on `#162032`, well under AA. Accent *text* on dark therefore uses the light tint `#E5DEF7` (12.5:1) via `--ui-accent`, and full-strength Violet stays where it reads properly — as a fill behind white text. Every `--ui-*` pairing is at AA or better in both themes.
+
+### Brand mark
+
+CaptionBuddy's logo art is still a pending deliverable in the design system, which carries placeholder slots for it. Until it lands, the splash and header both render `BrandMark` — a flat Violet chip built from the system's own primitives, no gradients, radius from the `--r-*` tokens. Swap that one component for the real asset when it arrives and both surfaces follow.
+
+Typefaces are Satoshi (UI and caption text), JetBrains Mono (labels, language codes, status), and Instrument Serif (headings only — never live caption text). The wordmark is Satoshi 700 and is never set in serif. The desktop windows load them from Fontshare/Google Fonts and fall back to the platform's system faces offline; the phone viewer deliberately fetches no web fonts, since the church network often has no internet.
+
 ## Configuration
 
 All settings are adjustable from the control panel at runtime and are **automatically persisted** between sessions — no manual save required.
@@ -226,10 +258,9 @@ All settings are adjustable from the control panel at runtime and are **automati
 |---------|---------|
 | Pacing Mode | Sentence-by-sentence, Word-by-word, Instant |
 | WPM | 150 to 300 |
-| Font | Arial, Verdana, Georgia, OpenDyslexic |
-| Font Size | 16px to 72px |
-| Display Theme | Light, Dark, High Contrast |
-| Control Panel Theme | Light, Dark, High Contrast |
+| Font | Satoshi, Arial, Verdana, OpenDyslexic |
+| Font Size | 24px to 200px |
+| Caption Output Theme | Caption (white on black), Light, High Contrast |
 | Language | English, Spanish, Spanish to English translation |
 | Spanish Translation | Off, or per-surface: English / Spanish / Both |
 | Display Windows | Up to two, each assignable to any connected monitor |
